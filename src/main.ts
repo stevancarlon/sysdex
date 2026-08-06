@@ -626,7 +626,7 @@ for (const kind of componentOrder) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x0b1b2a, 19, 33);
+scene.fog = new THREE.Fog(0x171b18, 19, 33);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -634,7 +634,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.28;
+renderer.toneMappingExposure = 1.2;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
 camera.position.set(8.8, 18.5, 10.6);
@@ -646,10 +646,10 @@ const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
 
-const ambientLight = new THREE.HemisphereLight(0xd8efff, 0x172d46, 2.35);
+const ambientLight = new THREE.HemisphereLight(0xe4d6ae, 0x20251f, 2.2);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xb9dcff, 3.9);
+const keyLight = new THREE.DirectionalLight(0xffd39b, 3.45);
 keyLight.position.set(-9, 15, 11);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
@@ -660,11 +660,11 @@ keyLight.shadow.camera.bottom = -11;
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
 
-const blueRimFill = new THREE.PointLight(0x397dc6, 19, 14, 2);
+const blueRimFill = new THREE.PointLight(0xe37832, 13, 13, 2);
 blueRimFill.position.set(-5, 5, -4);
 scene.add(blueRimFill);
 
-const coolFill = new THREE.PointLight(0x65d9ea, 18, 14, 2);
+const coolFill = new THREE.PointLight(0x55c9cf, 11, 13, 2);
 coolFill.position.set(6, 4, 3);
 scene.add(coolFill);
 
@@ -702,7 +702,7 @@ for (const texture of [paintedFasciaTexture, paintedFasciaBumpTexture]) {
   texture.repeat.set(3.6, 0.86);
 }
 
-const floorTexture = createSurfaceTexture("#65a99d", "#345d56", "#b1b98e");
+const floorTexture = createSurfaceTexture("#5f9788", "#364f45", "#b7b58a");
 floorTexture.repeat.set(3, 2);
 
 const boardSurfaceMaterial = new THREE.MeshStandardMaterial({
@@ -711,7 +711,7 @@ const boardSurfaceMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.96,
   metalness: 0.02,
 });
-const boardFasciaMaterial = fasciaMaterial(0x426c84, 0.82, 0.3, 0.022);
+const boardFasciaMaterial = fasciaMaterial(0x4b5747, 0.86, 0.3, 0.022);
 const boardBase = new THREE.Mesh(
   new THREE.BoxGeometry(columns * tileSize + 0.68, 0.68, rows * tileSize + 0.68),
   [
@@ -729,7 +729,7 @@ boardGroup.add(boardBase);
 
 const boardLip = new THREE.Mesh(
   new THREE.BoxGeometry(columns * tileSize + 0.98, 0.34, rows * tileSize + 0.98),
-  fasciaMaterial(0x426780, 0.78, 0.34, 0.018),
+  fasciaMaterial(0x5a5e46, 0.8, 0.34, 0.018),
 );
 boardLip.position.y = -0.43;
 boardLip.receiveShadow = true;
@@ -751,7 +751,7 @@ boardGroup.add(paintedFloor);
 for (let row = 0; row < rows; row += 1) {
   for (let col = 0; col < columns; col += 1) {
     const variation = pseudoRandom(row * columns + col);
-    const tileTints = [0xdbe8ec, 0xc8dae2, 0xbdd4dd, 0xd1e1e5];
+    const tileTints = [0x82aea1, 0x739b8f, 0x89a99c, 0x91b2a4];
     const tileGeometry = new THREE.BoxGeometry(
       tileSize - 0.008,
       0.08 + variation * 0.025,
@@ -1176,7 +1176,7 @@ function fasciaMaterial(color: number, roughness = 0.8, metalness = 0.3, bumpSca
     map: paintedFasciaTexture,
     bumpMap: paintedFasciaBumpTexture,
     bumpScale,
-    emissive: 0x2b6683,
+    emissive: 0x263f36,
     emissiveMap: paintedFasciaTexture,
     emissiveIntensity: 0.48,
     roughness,
@@ -1202,9 +1202,9 @@ function addMesh(
     const outline = new THREE.LineSegments(
       new THREE.EdgesGeometry(geometry, 28),
       new THREE.LineBasicMaterial({
-        color: 0x101b28,
+        color: 0x211f18,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.5,
       }),
     );
     outline.renderOrder = 2;
@@ -1217,25 +1217,25 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   const group = new THREE.Group();
   group.userData.kind = kind;
   const casingTints: Record<ComponentKind, number> = {
-    loadBalancer: 0xbcecff,
-    api: 0xeaf4f4,
-    redis: 0x83c8f5,
-    postgres: 0x91ddda,
-    queue: 0xc7caef,
-    worker: 0xd8a27f,
-    geoIndex: 0x83d8c7,
-    objectStorage: 0xd9d0a3,
-    cdn: 0x9cdcf1,
+    loadBalancer: 0x8bbbbe,
+    api: 0xb9b89c,
+    redis: 0x6f98a4,
+    postgres: 0x78a18d,
+    queue: 0x92958a,
+    worker: 0xb66d43,
+    geoIndex: 0x70a895,
+    objectStorage: 0xb5aa7f,
+    cdn: 0x84b6bd,
   };
-  const dark = material(0x8195a8, {
+  const dark = material(0x59675e, {
     map: paintedMachineDarkTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.018,
     roughness: 0.78,
     metalness: 0.24,
   });
-  const ink = material(0x102c3a, { roughness: 0.72, metalness: 0.25 });
-  const cream = material(0xdce8ea, {
+  const ink = material(0x202b28, { roughness: 0.72, metalness: 0.25 });
+  const cream = material(0xbebda3, {
     map: paintedMachineNeutralTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.012,
@@ -1249,8 +1249,8 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
     roughness: 0.68,
     metalness: 0.18,
   });
-  const glass = material(0x72dfe7, {
-    emissive: 0x176f91,
+  const glass = material(0x70d9d5, {
+    emissive: 0x176f70,
     emissiveIntensity: 1.8,
     roughness: 0.25,
   });
@@ -1489,11 +1489,11 @@ function renderPartPreviews() {
   previewRenderer.setClearColor(0x000000, 0);
 
   const previewScene = new THREE.Scene();
-  previewScene.add(new THREE.HemisphereLight(0xd8efff, 0x172d46, 2.8));
-  const previewKey = new THREE.DirectionalLight(0xb9dcff, 4.5);
+  previewScene.add(new THREE.HemisphereLight(0xe4d6ae, 0x20251f, 2.8));
+  const previewKey = new THREE.DirectionalLight(0xffd39b, 4.2);
   previewKey.position.set(-3, 7, 5);
   previewScene.add(previewKey);
-  const previewRim = new THREE.PointLight(0x57cbe7, 10, 8, 2);
+  const previewRim = new THREE.PointLight(0x57c8c7, 8, 8, 2);
   previewRim.position.set(3, 3, -2);
   previewScene.add(previewRim);
 
@@ -1553,16 +1553,16 @@ function setBrandItem(kind: ComponentKind, animate = true) {
 }
 
 function addBoardDetails() {
-  const dark = material(0x1b2937, { roughness: 0.68, metalness: 0.4 });
-  const blue = material(0x377fac, { roughness: 0.61, metalness: 0.2 });
-  const grate = material(0x17232f, { roughness: 0.74, metalness: 0.52 });
-  const seam = material(0x24465b, {
+  const dark = material(0x252c29, { roughness: 0.68, metalness: 0.4 });
+  const blue = material(0xb86632, { roughness: 0.61, metalness: 0.2 });
+  const grate = material(0x1c2422, { roughness: 0.74, metalness: 0.52 });
+  const seam = material(0x435d50, {
     roughness: 0.82,
     metalness: 0.28,
     transparent: true,
     opacity: 0.1,
   });
-  const patch = material(0x7f9eaa, { roughness: 0.92, metalness: 0.12 });
+  const patch = material(0x899b82, { roughness: 0.92, metalness: 0.12 });
 
   for (let col = 1; col < columns; col += 1) {
     addMesh(
@@ -1595,19 +1595,20 @@ function addBoardDetails() {
   exchange.rotation.y = -0.055;
   boardGroup.add(exchange);
 
-  const warmMetal = casingMaterial(0xa8bbb5, 0.88, 0.1, 0.012);
-  const sageMetal = casingMaterial(0x789f98, 0.82, 0.15, 0.014);
-  const paleMetal = casingMaterial(0xc1c9b8, 0.9, 0.06, 0.01);
-  const neutralGrate = material(0x394746, { roughness: 0.82, metalness: 0.34 });
+  const warmMetal = casingMaterial(0xaaa784, 0.88, 0.1, 0.012);
+  const sageMetal = casingMaterial(0x718d7b, 0.82, 0.15, 0.014);
+  const paleMetal = casingMaterial(0xb9b391, 0.9, 0.06, 0.01);
+  const safetyOrange = casingMaterial(0xc86a2d, 0.8, 0.15, 0.012);
+  const neutralGrate = material(0x343b35, { roughness: 0.82, metalness: 0.34 });
 
   addMesh(exchange, new THREE.CylinderGeometry(1.08, 1.08, 0.07, 48), warmMetal, [0, 0.035, 0]);
-  addMesh(exchange, new THREE.TorusGeometry(0.93, 0.09, 8, 48), paleMetal, [0, 0.105, 0], [Math.PI / 2, 0, 0]);
+  addMesh(exchange, new THREE.TorusGeometry(0.93, 0.09, 8, 48), safetyOrange, [0, 0.105, 0], [Math.PI / 2, 0, 0]);
   addMesh(exchange, new THREE.CylinderGeometry(0.64, 0.64, 0.075, 40), sageMetal, [0, 0.105, 0]);
 
   // Separate ring plates make it look serviceable instead of like one smooth disc.
   for (let segment = 0; segment < 6; segment += 1) {
     const start = segment * (Math.PI * 2 / 6) + 0.045;
-    const segmentMaterial = segment % 2 === 0 ? warmMetal : paleMetal;
+    const segmentMaterial = segment % 2 === 0 ? safetyOrange : paleMetal;
     addMesh(
       exchange,
       new THREE.RingGeometry(0.68, 0.86, 24, 1, start, Math.PI * 2 / 6 - 0.09),
@@ -1632,8 +1633,8 @@ function addBoardDetails() {
   addMesh(exchange, new THREE.CylinderGeometry(0.22, 0.22, 0.075, 24), paleMetal, [0, 0.19, 0]);
   addMesh(exchange, new THREE.CylinderGeometry(0.09, 0.09, 0.085, 18), neutralGrate, [0, 0.235, 0]);
 
-  const portMaterial = material(0x62aeb2, {
-    emissive: 0x174d68,
+  const portMaterial = material(0x62c4c2, {
+    emissive: 0x174f51,
     emissiveIntensity: 0.14,
     roughness: 0.38,
     metalness: 0.18,
@@ -1689,18 +1690,18 @@ function addBoardDetails() {
 }
 
 function addEnvironment() {
-  const dark = material(0x1b2e42, { roughness: 0.66, metalness: 0.48 });
-  const screen = material(0x73ddeb, { emissive: 0x1d718f, emissiveIntensity: 1.7, roughness: 0.25 });
-  const propDark = casingMaterial(0x3f6682, 0.8, 0.3, 0.018);
-  const propBlue = casingMaterial(0x5e91af, 0.72, 0.22, 0.016);
-  const propSage = casingMaterial(0x608b92, 0.78, 0.16, 0.014);
-  const propCream = casingMaterial(0x91afb4, 0.82, 0.1, 0.012);
-  const propAccent = casingMaterial(0x4f8fb9, 0.66, 0.24, 0.014);
-  const propTank = casingMaterial(0x5b83a0, 0.76, 0.24, 0.018);
-  const fasciaDark = fasciaMaterial(0x3b6b86, 0.84, 0.3, 0.022);
-  const fasciaBlue = fasciaMaterial(0x426f88, 0.8, 0.24, 0.018);
+  const dark = material(0x242a27, { roughness: 0.7, metalness: 0.46 });
+  const screen = material(0x76e0db, { emissive: 0x1c7674, emissiveIntensity: 1.65, roughness: 0.25 });
+  const propDark = casingMaterial(0x414a40, 0.82, 0.28, 0.018);
+  const propBlue = casingMaterial(0x5e7469, 0.74, 0.2, 0.016);
+  const propSage = casingMaterial(0x718171, 0.8, 0.14, 0.014);
+  const propCream = casingMaterial(0x9e9b7c, 0.84, 0.09, 0.012);
+  const propAccent = casingMaterial(0xb65d2e, 0.7, 0.22, 0.014);
+  const propTank = casingMaterial(0x777e59, 0.78, 0.22, 0.018);
+  const fasciaDark = fasciaMaterial(0x343c36, 0.86, 0.28, 0.022);
+  const fasciaBlue = fasciaMaterial(0x4d594d, 0.82, 0.22, 0.018);
   const paintedBulkhead = new THREE.MeshBasicMaterial({
-    color: 0x8eabb9,
+    color: 0x81876d,
     map: paintedWallTexture,
     side: THREE.DoubleSide,
   });
@@ -1730,10 +1731,11 @@ function addEnvironment() {
   for (let index = 0; index < 5; index += 1) {
     addEquipmentModule(-3.3 + index * 1.62, 4.85, 0, index + 17, index % 2 ? propSage : propCream, propBlue, propDark, screen, propAccent);
   }
+  addMaintenanceGantry(propDark, propSage, propCream, screen, propAccent);
 
-  const coolLamp = material(0xb1efff, {
-    emissive: 0x2b9dcc,
-    emissiveIntensity: 1.9,
+  const coolLamp = material(0xffc06e, {
+    emissive: 0xc45d24,
+    emissiveIntensity: 1.75,
     roughness: 0.22,
   });
   for (const [x, z, rotation] of [
@@ -1743,7 +1745,7 @@ function addEnvironment() {
     addMesh(environmentGroup, new THREE.BoxGeometry(0.78, 0.16, 0.09), coolLamp, [x, 1.55, z], [0, rotation, 0]);
   }
   for (const [x, z] of [[-3.7, -4.1], [0, -4.1], [3.7, -4.1]] as const) {
-    const lampLight = new THREE.PointLight(0x64d7ff, 7, 4.6, 2);
+    const lampLight = new THREE.PointLight(0xf09a48, 5.5, 4.6, 2);
     lampLight.position.set(x, 1.5, z);
     environmentGroup.add(lampLight);
   }
@@ -1758,23 +1760,23 @@ function addEnvironment() {
   addCable([
     new THREE.Vector3(-5.9, 0.3, -2.9), new THREE.Vector3(-5.5, 0.24, -1.6),
     new THREE.Vector3(-5.1, 0.2, -0.2), new THREE.Vector3(-4.6, 0.17, 0.7),
-  ], 0x357fb5, 0.055);
+  ], 0xd36d2f, 0.055);
   addCable([
     new THREE.Vector3(5.95, 0.28, 2.9), new THREE.Vector3(5.2, 0.2, 2.35),
     new THREE.Vector3(4.3, 0.17, 2.25), new THREE.Vector3(3.7, 0.16, 2.6),
-  ], 0x3a8c94, 0.045);
+  ], 0x4d9da1, 0.045);
   addCable([
     new THREE.Vector3(-2.5, 0.23, 4.75), new THREE.Vector3(-1.6, 0.17, 4.1),
     new THREE.Vector3(-0.8, 0.15, 3.95), new THREE.Vector3(-0.25, 0.15, 3.35),
-  ], 0x222725, 0.07);
+  ], 0x712e27, 0.07);
 
   // Tall translucent coolant tank on the right, echoing the reference silhouette.
   addMesh(environmentGroup, new THREE.CylinderGeometry(0.64, 0.72, 2.65, 22), propTank, [5.72, 1.05, 0.35]);
-  addMesh(environmentGroup, new THREE.CylinderGeometry(0.51, 0.56, 1.75, 22), material(0x72bed0, {
+  addMesh(environmentGroup, new THREE.CylinderGeometry(0.51, 0.56, 1.75, 22), material(0xb4b879, {
     transparent: true,
-    opacity: 0.47,
-    emissive: 0x174e72,
-    emissiveIntensity: 0.5,
+    opacity: 0.5,
+    emissive: 0x515a28,
+    emissiveIntensity: 0.42,
     roughness: 0.22,
   }), [5.72, 1.0, 0.35]);
   for (const y of [0.2, 1.05, 1.9]) {
@@ -1799,6 +1801,58 @@ function addEnvironment() {
 
   addCrateStack(-5.7, 3.55, 0.1, 3, propCream, propAccent, propDark);
   addCrateStack(5.55, -3.35, -0.08, 3, propSage, propAccent, propDark);
+}
+
+function addMaintenanceGantry(
+  dark: THREE.Material,
+  body: THREE.Material,
+  cream: THREE.Material,
+  screen: THREE.Material,
+  accent: THREE.Material,
+) {
+  const gantry = new THREE.Group();
+  gantry.position.set(0, 0, -4.66);
+  environmentGroup.add(gantry);
+
+  // A deep central service bay gives the room a readable architectural focus.
+  addMesh(gantry, new THREE.BoxGeometry(3.25, 2.75, 0.54), dark, [0, 1.18, 0]);
+  addMesh(gantry, new THREE.BoxGeometry(2.75, 2.45, 0.58), body, [0, 1.16, 0.12]);
+  addMesh(gantry, new THREE.BoxGeometry(1.52, 1.82, 0.68), dark, [0, 0.92, 0.25]);
+  addMesh(gantry, new THREE.BoxGeometry(1.2, 1.52, 0.08), material(0x202622, {
+    roughness: 0.86,
+    metalness: 0.24,
+  }), [0, 0.88, 0.64]);
+
+  for (const x of [-1.25, 1.25]) {
+    addMesh(gantry, new THREE.BoxGeometry(0.34, 2.42, 0.74), cream, [x, 1.15, 0.25]);
+    addMesh(gantry, new THREE.CylinderGeometry(0.09, 0.09, 1.75, 10), accent, [x, 1.22, 0.68]);
+    addMesh(gantry, new THREE.CylinderGeometry(0.14, 0.14, 0.18, 10), dark, [x, 0.42, 0.68]);
+    addMesh(gantry, new THREE.CylinderGeometry(0.14, 0.14, 0.18, 10), dark, [x, 2.02, 0.68]);
+  }
+
+  addMesh(gantry, new THREE.TorusGeometry(0.76, 0.12, 8, 24, Math.PI), cream, [0, 1.54, 0.65]);
+  addMesh(gantry, new THREE.BoxGeometry(1.0, 0.42, 0.12), dark, [0, 1.86, 0.69]);
+  addMesh(gantry, new THREE.BoxGeometry(0.8, 0.25, 0.07), screen, [0, 1.86, 0.78]);
+  addMesh(gantry, new THREE.BoxGeometry(0.38, 0.11, 0.05), screen, [0, 1.48, 0.72]);
+
+  // Alternating safety plates echo the painted maintenance language in the references.
+  for (let index = 0; index < 11; index += 1) {
+    addMesh(
+      gantry,
+      new THREE.BoxGeometry(0.23, 0.1, 0.1),
+      index % 2 === 0 ? accent : dark,
+      [-1.15 + index * 0.23, 0.16, 0.68],
+      [0, 0, index % 2 === 0 ? -0.3 : 0.3],
+    );
+  }
+
+  // Uneven side consoles keep the bay from reading as a perfectly mirrored portal.
+  addMesh(gantry, new THREE.BoxGeometry(0.72, 0.82, 0.62), dark, [-1.78, 0.58, 0.3], [0, -0.12, 0]);
+  addMesh(gantry, new THREE.BoxGeometry(0.52, 0.18, 0.06), screen, [-1.78, 0.73, 0.64], [0, -0.12, 0]);
+  addMesh(gantry, new THREE.BoxGeometry(0.58, 0.58, 0.56), body, [1.72, 0.48, 0.33], [0, 0.08, 0]);
+  for (let index = 0; index < 3; index += 1) {
+    addMesh(gantry, new THREE.BoxGeometry(0.3, 0.045, 0.035), index === 0 ? accent : dark, [1.72, 0.6 - index * 0.12, 0.63]);
+  }
 }
 
 function addPlatformUndercarriage(
