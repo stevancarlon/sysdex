@@ -13,6 +13,13 @@ import {
 import { type SimulationEdgeMode, type SimulationGraph } from "./simulation/graph.ts";
 import { coreComponentCapacity, evaluateCoreServiceGraph } from "./simulation/coreService.ts";
 import { evaluateSocialRedirectGraph } from "./simulation/socialRedirects.ts";
+import {
+  evaluateDispatchGraph,
+  evaluateMatchingGraph,
+  evaluateStreamingGraph,
+  infrastructureComponentCapacity,
+  type SpecializedEvaluation,
+} from "./simulation/specializedWorkloads.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -2458,10 +2465,6 @@ function removeGhost() {
   ghost = null;
 }
 
-function firstNode(kind: ComponentKind) {
-  return nodes.find((node) => node.kind === kind);
-}
-
 function clearGroup(group: THREE.Group) {
   for (const child of [...group.children]) {
     group.remove(child);
@@ -2585,26 +2588,30 @@ function rebuildConnections() {
   const apiNodes = nodes.filter((node) => node.kind === "api");
   const redisNodes = nodes.filter((node) => node.kind === "redis");
   const postgresNodes = nodes.filter((node) => node.kind === "postgres");
-  const queue = firstNode("queue");
+  const queueNodes = nodes.filter((node) => node.kind === "queue");
   const workers = nodes.filter((node) => node.kind === "worker");
   const geoNodes = nodes.filter((node) => node.kind === "geoIndex");
   const objectStorageNodes = nodes.filter((node) => node.kind === "objectStorage");
   const cdnNodes = nodes.filter((node) => node.kind === "cdn");
 
-  const primaryApi = apiNodes[0];
   const primaryPostgres = postgresNodes[0];
   const usesGeoPath = currentPhase.workload === "matching" || currentPhase.workload === "dispatch";
   const archiveReplicationRoutes = postgresNodes.slice(1).map((replica, index) => [
     connect(primaryPostgres, replica, index === 0 ? "REPLICA STREAM" : null, "replicate"),
   ].filter((connection): connection is Connection => connection !== null));
   const geoArchiveByNode = new Map<PlacedComponent, Connection | null>();
-  for (const [index, geoNode] of geoNodes.entries()) {
-    geoArchiveByNode.set(geoNode, connect(
+  const geoArchiveRoutes: Connection[][] = [];
+  const geoArchiveEdgeCount = Math.max(geoNodes.length, postgresNodes.length);
+  for (let index = 0; index < geoArchiveEdgeCount && geoNodes.length > 0 && postgresNodes.length > 0; index += 1) {
+    const geoNode = geoNodes[index % geoNodes.length];
+    const connection = connect(
       geoNode,
-      postgresNodes[index % Math.max(1, postgresNodes.length)],
+      postgresNodes[index % postgresNodes.length],
       index === 0 ? "PROFILE SHARD" : null,
       "request",
-    ));
+    );
+    if (!geoArchiveByNode.has(geoNode)) geoArchiveByNode.set(geoNode, connection);
+    if (connection) geoArchiveRoutes.push([connection]);
   }
   const cacheDownstreamByNode = new Map<PlacedComponent, Connection | null>();
   for (const [index, redisNode] of redisNodes.entries()) {
@@ -2614,9 +2621,17 @@ function rebuildConnections() {
     cacheDownstreamByNode.set(redisNode, connect(redisNode, downstream, index === 0 ? "CACHE FILL" : "CACHE SHARD", "cache"));
   }
   const edgeIngress = cdnNodes.map((cdn, index) => connect(cdn, loadBalancers[index % Math.max(1, loadBalancers.length)], index === 0 ? "EDGE REQUEST" : null));
-  const edgeMediaRoutes = cdnNodes.map((cdn, index) => [
-    connect(cdn, objectStorageNodes[index % Math.max(1, objectStorageNodes.length)], index === 0 ? "EDGE MEDIA FILL" : null, "cache"),
-  ].filter((connection): connection is Connection => connection !== null));
+  const edgeMediaRoutes: Connection[][] = [];
+  const edgeMediaRouteCount = Math.max(cdnNodes.length, objectStorageNodes.length);
+  for (let index = 0; index < edgeMediaRouteCount && cdnNodes.length > 0 && objectStorageNodes.length > 0; index += 1) {
+    const connection = connect(
+      cdnNodes[index % cdnNodes.length],
+      objectStorageNodes[index % objectStorageNodes.length],
+      index === 0 ? "EDGE MEDIA FILL" : null,
+      "cache",
+    );
+    if (connection) edgeMediaRoutes.push([connection]);
+  }
   const ingressByApi = new Map<PlacedComponent, Connection | null>();
 
   for (const [index, api] of apiNodes.entries()) {
@@ -2646,29 +2661,59 @@ function rebuildConnections() {
     : currentPhase.workload === "dispatch"
       ? "LOCATION EVENT"
       : "ASYNC EVENT · NON-BLOCKING";
-  const asyncEvent = connect(primaryApi, queue, asyncEventLabel, "enqueue");
-  for (const [index, worker] of workers.entries()) {
-    const synchronousAnalytics = currentPhase.workload === "analytics" && !queue;
+  const synchronousAnalytics = currentPhase.workload === "analytics" && queueNodes.length === 0;
+  if (synchronousAnalytics) for (const [index, worker] of workers.entries()) {
     const apiToWorker = synchronousAnalytics
       ? connect(apiNodes[index % Math.max(1, apiNodes.length)], worker, index === 0 ? "SYNC CALL · BLOCKING" : null)
       : null;
-    const queueToWorker = synchronousAnalytics ? null : connect(queue, worker, index === 0 ? "CONSUME JOB" : null, "consume");
     const workerCommit = connect(
       worker,
-      currentPhase.workload === "streaming"
-        ? objectStorageNodes[index % Math.max(1, objectStorageNodes.length)]
-        : postgresNodes[index % Math.max(1, postgresNodes.length)],
-      index === 0 ? (currentPhase.workload === "streaming" ? "WRITE MEDIA" : "ASYNC COMMIT") : null,
+      postgresNodes[index % Math.max(1, postgresNodes.length)],
+      index === 0 ? "ASYNC COMMIT" : null,
       "commit",
     );
     const sourceApi = apiNodes[index % Math.max(1, apiNodes.length)];
-    const asyncRoute = [sourceApi ? ingressByApi.get(sourceApi) ?? null : null, apiToWorker ?? asyncEvent, queueToWorker, workerCommit].filter(
+    const asyncRoute = [sourceApi ? ingressByApi.get(sourceApi) ?? null : null, apiToWorker, workerCommit].filter(
       (connection): connection is Connection => connection !== null,
     );
     if (asyncRoute.length > 1) trafficRoutes.push(asyncRoute);
   }
+  if (!synchronousAnalytics) {
+    const asyncRouteCount = Math.max(queueNodes.length, workers.length);
+    const enqueueByQueue = new Map<PlacedComponent, Connection | null>();
+    for (const [index, queueNode] of queueNodes.entries()) {
+      enqueueByQueue.set(queueNode, connect(
+        apiNodes[index % Math.max(1, apiNodes.length)],
+        queueNode,
+        index === 0 ? asyncEventLabel : null,
+        "enqueue",
+      ));
+    }
+    for (let index = 0; index < asyncRouteCount && queueNodes.length > 0 && workers.length > 0; index += 1) {
+      const queueNode = queueNodes[index % queueNodes.length];
+      const worker = workers[index % workers.length];
+      const queueToWorker = connect(queueNode, worker, index === 0 ? "CONSUME JOB" : null, "consume");
+      const workerCommit = connect(
+        worker,
+        currentPhase.workload === "streaming"
+          ? objectStorageNodes[index % Math.max(1, objectStorageNodes.length)]
+          : postgresNodes[index % Math.max(1, postgresNodes.length)],
+        index === 0 ? (currentPhase.workload === "streaming" ? "WRITE MEDIA" : "ASYNC COMMIT") : null,
+        "commit",
+      );
+      const sourceApi = apiNodes[index % Math.max(1, apiNodes.length)];
+      const asyncRoute = [
+        sourceApi ? ingressByApi.get(sourceApi) ?? null : null,
+        enqueueByQueue.get(queueNode) ?? null,
+        queueToWorker,
+        workerCommit,
+      ].filter((connection): connection is Connection => connection !== null);
+      if (asyncRoute.length > 1) trafficRoutes.push(asyncRoute);
+    }
+  }
   for (const route of edgeMediaRoutes) if (route.length > 0) trafficRoutes.push(route);
   for (const route of archiveReplicationRoutes) if (route.length > 0) trafficRoutes.push(route);
+  for (const route of geoArchiveRoutes) if (route.length > 0) trafficRoutes.push(route);
 }
 
 function captureAutomaticTopology() {
@@ -2685,7 +2730,7 @@ function captureAutomaticTopology() {
 }
 
 function manualWiringAvailable() {
-  return currentPhaseIndex > 0 && (currentPhase.workload === "general" || currentPhase.workload === "analytics");
+  return currentPhaseIndex > 0;
 }
 
 function syncWiringUi() {
@@ -2783,6 +2828,8 @@ function inferAuthoredConnection(from: PlacedComponent, to: PlacedComponent): Pi
     "api->redis": { mode: "request", label: "CACHE LOOKUP" },
     "api->postgres": { mode: "request", label: "DATABASE READ" },
     "redis->postgres": { mode: "cache", label: "CACHE FILL" },
+    "api->geoIndex": { mode: "request", label: "NEARBY QUERY" },
+    "redis->geoIndex": { mode: "cache", label: "CACHED NEARBY QUERY" },
     "api->queue": { mode: "enqueue", label: asyncEventLabel },
     "queue->worker": { mode: "consume", label: "CONSUME JOB" },
     "api->worker": { mode: "request", label: "SYNC CALL · BLOCKING" },
@@ -2841,7 +2888,7 @@ function buildLiveSimulationGraph(
 ): SimulationGraph {
   return {
     nodes: nodes.map((node) => {
-      const baseCapacity = coreComponentCapacity[node.kind as keyof typeof coreComponentCapacity] ?? 0;
+      const baseCapacity = infrastructureComponentCapacity[node.kind];
       const configCapacityMultiplier = node.kind === "api" && activeConfigs.has("autoscaling")
         ? 1.35
         : node.kind === "postgres" && activeConfigs.has("walTuning")
@@ -3013,6 +3060,101 @@ function evaluateAnalyticsMetrics(
   };
 }
 
+function evaluateSpecializedMetrics(
+  demand: number,
+  counts: Record<ComponentKind, number>,
+  effectiveCounts: Record<ComponentKind, number>,
+  incidentOpen: boolean,
+  recoveryProgress: number,
+  incidentCapacityMultiplier: number,
+) {
+  const graph = buildLiveSimulationGraph(incidentOpen, incidentCapacityMultiplier);
+  const options = { demand, latencySlo, errorSlo };
+  let topology: SpecializedEvaluation;
+  if (currentPhase.workload === "matching") topology = evaluateMatchingGraph(graph, options);
+  else if (currentPhase.workload === "streaming") topology = evaluateStreamingGraph(graph, options);
+  else topology = evaluateDispatchGraph(graph, options);
+
+  const incidentLatency = incidentOpen
+    ? currentPhase.incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
+    : 0;
+  const incidentErrors = incidentOpen
+    ? currentPhase.incident.errorPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.32 : 1)
+    : 0;
+  const latency = topology.hasResponsePath
+    ? Math.round(Math.max(24, topology.latency - (activeConfigs.has("walTuning") ? 8 : 0) + incidentLatency))
+    : 0;
+  const errors = topology.errors + incidentErrors;
+  const contractSatisfied = topology.hasResponsePath
+    && topology.capacity >= demand
+    && latency <= latencySlo
+    && errors < errorSlo
+    && topology.backgroundHealthy;
+  let bottleneckKind = topology.bottleneckKind as ComponentKind | null;
+  let diagnosis = "Every connected route is inside its operating envelope.";
+
+  if (!topology.hasResponsePath) {
+    bottleneckKind = topology.missingKinds[0] as ComponentKind | null;
+    if (currentPhase.workload === "streaming") {
+      diagnosis = topology.missingKinds.includes("cdn") || topology.missingKinds.includes("objectStorage")
+        ? "Playback has no complete CDN Edge → Object Storage delivery route. Metadata health cannot hide a broken media path."
+        : "Metadata has no complete Load Balancer → API Server → PostgreSQL route.";
+    } else {
+      diagnosis = "Nearby requests need one complete directed route through Load Balancer, API Server, Geo Index, and PostgreSQL.";
+    }
+  } else if (incidentOpen) {
+    bottleneckKind = currentPhase.incident.affectedKind;
+    diagnosis = `${currentPhase.incident.title} in progress — ${currentPhase.incident.operatorPrompt}`;
+  } else if (!topology.backgroundHealthy) {
+    bottleneckKind = (topology.backgroundBottleneckKind as ComponentKind | null) ?? "worker";
+    if (currentPhase.workload === "streaming") {
+      diagnosis = topology.backgroundMode === "missing"
+        ? "Playback and metadata respond, but uploads have no complete API → Queue → Transcode Worker → Object Storage path."
+        : `Transcode jobs arrive at ${Math.round(topology.backgroundArrivalRps).toLocaleString("en-US")}/s faster than the connected media pipeline can drain them.`;
+    } else {
+      diagnosis = topology.backgroundMode === "missing"
+        ? "Ride requests respond, but driver locations have no complete API → Queue → Location Worker → PostgreSQL path."
+        : `Location updates are building a ${Math.round(topology.backgroundBacklogRps).toLocaleString("en-US")}/s backlog behind the request path.`;
+    }
+  } else if (topology.capacity < demand) {
+    const capacity = Math.round(topology.capacity).toLocaleString("en-US");
+    if (bottleneckKind === "loadBalancer") diagnosis = `Only connected ingress machines contribute; this route carries ${capacity} r/s.`;
+    else if (bottleneckKind === "api") diagnosis = `The connected API pool saturates at ${capacity} r/s equivalent capacity.`;
+    else if (bottleneckKind === "geoIndex") diagnosis = `The connected geographic partitions saturate at ${capacity} nearby queries/s.`;
+    else if (bottleneckKind === "cdn") diagnosis = `The connected edge regions can deliver ${capacity} playback requests/s before origin protection fails.`;
+    else if (bottleneckKind === "objectStorage") diagnosis = `The reachable media store supports ${capacity} playback and upload requests/s.`;
+    else if (bottleneckKind === "queue" || bottleneckKind === "worker") diagnosis = `The connected asynchronous pipeline drains only ${capacity} r/s equivalent work.`;
+    else diagnosis = `The connected durable-data route saturates at ${capacity} r/s.`;
+  } else if (latency > latencySlo) {
+    bottleneckKind = topology.cacheOperational ? bottleneckKind : "redis";
+    if (!topology.cacheOperational) {
+      diagnosis = currentPhase.workload === "streaming"
+        ? `Metadata reads still reach PostgreSQL on disk, pushing p95 to ${latency} ms.`
+        : `Nearby profile reads bypass fast memory and push p95 to ${latency} ms.`;
+    } else {
+      diagnosis = `Queueing on the hottest connected route pushes p95 to ${latency} ms, above the ${latencySlo} ms SLO.`;
+    }
+  } else if (topology.backgroundMode === "synchronous") {
+    bottleneckKind = "queue";
+    diagnosis = "Capacity passes, but a user response still waits for background work. Decoupling that edge would isolate latency and failure.";
+  } else {
+    bottleneckKind = null;
+  }
+
+  return {
+    capacity: topology.capacity,
+    latency,
+    errors,
+    hasCore: topology.hasResponsePath,
+    bottleneckKind,
+    diagnosis,
+    counts,
+    effectiveCounts,
+    topology,
+    contractSatisfied,
+  };
+}
+
 function calculateMetrics(demand = targetRps) {
   const counts = Object.fromEntries(componentOrder.map((kind) => [kind, nodes.filter((node) => node.kind === kind).length])) as Record<ComponentKind, number>;
   const effectiveCounts = Object.fromEntries(componentOrder.map((kind) => [
@@ -3021,7 +3163,6 @@ function calculateMetrics(demand = targetRps) {
       .filter((node) => node.kind === kind)
       .reduce((sum, node) => sum + (node.state === "failed" ? 0 : node.state === "degraded" ? 0.55 : 1), 0),
   ])) as Record<ComponentKind, number>;
-  const hasCore = effectiveCounts.loadBalancer > 0 && effectiveCounts.api > 0 && effectiveCounts.postgres > 0;
   const incidentOpen = incidentTriggered && incidentMode !== "resolved";
   const recoveryProgress = incidentMode === "recovering"
     ? THREE.MathUtils.clamp(incidentRecoveryRemaining / Math.max(0.1, currentPhase.incident.recoverySeconds), 0.12, 1)
@@ -3057,170 +3198,14 @@ function calculateMetrics(demand = targetRps) {
     );
   }
 
-  let loadBalancerCapacity = effectiveCounts.loadBalancer * 950;
-  let apiCapacity = effectiveCounts.api * 300 * (activeConfigs.has("autoscaling") ? 1.35 : 1);
-  const cacheOperational = effectiveCounts.redis >= 0.5;
-  let databaseCapacity = effectiveCounts.postgres * (cacheOperational ? 1750 : 560) * (activeConfigs.has("walTuning") ? 1.25 : 1);
-  let queueCapacity = effectiveCounts.queue * 1200;
-  let workerCapacity = effectiveCounts.worker * 1600;
-  let geoCapacity = effectiveCounts.geoIndex * 3200;
-  let objectStorageCapacity = effectiveCounts.objectStorage * 5000;
-  let cdnCapacity = effectiveCounts.cdn * 4000;
-  if (incidentOpen && incident.affectedKind === "loadBalancer") loadBalancerCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && incident.affectedKind === "api") apiCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && (incident.affectedKind === "postgres" || incident.affectedKind === "redis")) databaseCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && incident.affectedKind === "queue") queueCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && incident.affectedKind === "worker") workerCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && incident.affectedKind === "geoIndex") geoCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && incident.affectedKind === "objectStorage") objectStorageCapacity *= incidentCapacityMultiplier;
-  if (incidentOpen && incident.affectedKind === "cdn") cdnCapacity *= incidentCapacityMultiplier;
-  if (!hasCore) {
-    const missingKinds = ([
-      effectiveCounts.loadBalancer === 0 ? "loadBalancer" : null,
-      effectiveCounts.api === 0 ? "api" : null,
-      effectiveCounts.postgres === 0 ? "postgres" : null,
-    ].filter(Boolean)) as ComponentKind[];
-    const missing = missingKinds.map((kind) => componentDefinitions[kind].label);
-    return {
-      capacity: 0,
-      latency: 0,
-      errors: demand > 0 ? 100 : 0,
-      hasCore,
-      bottleneckKind: missingKinds[0] ?? null,
-      diagnosis: incidentOpen ? `${incident.title}: no healthy ${missing.join(", ")} capacity remains.` : `Missing request path: ${missing.join(", ")}.`,
-      counts,
-      effectiveCounts,
-    };
-  }
-
-  const usesGeoIndex = currentPhase.workload === "matching" || currentPhase.workload === "dispatch";
-  const usesMediaPipeline = currentPhase.workload === "streaming";
-  const backgroundFraction = currentPhase.workload === "streaming"
-    ? 0.18
-    : currentPhase.workload === "dispatch"
-      ? 0.42
-      : 0;
-  const hasQueue = effectiveCounts.queue >= 0.5;
-  const hasWorker = effectiveCounts.worker >= 0.5;
-  const asyncUserCapacity = backgroundFraction === 0
-    ? Number.POSITIVE_INFINITY
-    : !hasWorker
-      ? 0
-      : hasQueue
-        ? Math.min(queueCapacity, workerCapacity) / backgroundFraction
-        : workerCapacity / backgroundFraction;
-  const edgeOriginFraction = usesMediaPipeline && effectiveCounts.cdn > 0
-    ? Math.max(0.34, 1 - effectiveCounts.cdn * 0.22)
-    : 1;
-
-  if (usesGeoIndex) databaseCapacity *= effectiveCounts.geoIndex > 0 ? 3 : 0.32;
-  const originCapacity = Math.min(
-    loadBalancerCapacity / edgeOriginFraction,
-    apiCapacity / edgeOriginFraction,
-    databaseCapacity / edgeOriginFraction,
+  return evaluateSpecializedMetrics(
+    demand,
+    counts,
+    effectiveCounts,
+    incidentOpen,
+    recoveryProgress,
+    incidentCapacityMultiplier,
   );
-  const geoUserCapacity = usesGeoIndex ? geoCapacity : Number.POSITIVE_INFINITY;
-  const mediaStorageUserCapacity = usesMediaPipeline
-    ? (effectiveCounts.objectStorage > 0 ? objectStorageCapacity : databaseCapacity * 0.2)
-    : Number.POSITIVE_INFINITY;
-  const mediaDeliveryUserCapacity = usesMediaPipeline
-    ? (effectiveCounts.cdn > 0 ? cdnCapacity : loadBalancerCapacity * 0.45)
-    : Number.POSITIVE_INFINITY;
-  const capacity = Math.min(originCapacity, asyncUserCapacity, geoUserCapacity, mediaStorageUserCapacity, mediaDeliveryUserCapacity);
-  const utilization = demand / Math.max(1, capacity);
-  const baseLatency = cacheOperational ? 72 : 145;
-  const asyncPipelineOperational = backgroundFraction === 0 || (hasQueue && hasWorker && asyncUserCapacity >= demand);
-  const asyncBenefit = backgroundFraction > 0 && asyncPipelineOperational ? 12 : 0;
-  const missingWorkerPenalty = backgroundFraction > 0 && !hasWorker ? 64 : 0;
-  const geoPenalty = usesGeoIndex && effectiveCounts.geoIndex === 0 ? 95 : 0;
-  const geoBenefit = usesGeoIndex && effectiveCounts.geoIndex > 0 ? 20 : 0;
-  const objectStoragePenalty = usesMediaPipeline && effectiveCounts.objectStorage === 0 ? 82 : 0;
-  const objectStorageBenefit = usesMediaPipeline && effectiveCounts.objectStorage > 0 ? 8 : 0;
-  const cdnBenefit = usesMediaPipeline ? Math.min(25, effectiveCounts.cdn * 9) : 0;
-  const replicaBenefit = Math.min(12, Math.max(0, effectiveCounts.api - 1) * 3);
-  const storageTuningBenefit = activeConfigs.has("walTuning") ? 8 : 0;
-  const loadPenalty = Math.max(0, utilization - 0.72) * 74;
-  const incidentLatency = incidentOpen
-    ? incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
-    : 0;
-  const latency = Math.round(Math.max(
-    30,
-    baseLatency
-      + missingWorkerPenalty
-      + geoPenalty
-      + objectStoragePenalty
-      - asyncBenefit
-      - geoBenefit
-      - objectStorageBenefit
-      - cdnBenefit
-      - replicaBenefit
-      - storageTuningBenefit
-      + loadPenalty
-      + incidentLatency,
-  ));
-  const capacityErrors = demand > 0 ? Math.max(0, ((demand - capacity) / demand) * 100) : 0;
-  const incidentErrors = incidentOpen
-    ? incident.errorPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.32 : 1)
-    : 0;
-  const errors = capacityErrors + incidentErrors;
-
-  const tierCapacities: Array<[ComponentKind, number]> = [
-    ["loadBalancer", loadBalancerCapacity / edgeOriginFraction],
-    ["api", apiCapacity / edgeOriginFraction],
-    ["postgres", databaseCapacity / edgeOriginFraction],
-  ];
-  if (backgroundFraction > 0) {
-    tierCapacities.push([queueCapacity <= workerCapacity ? "queue" : "worker", asyncUserCapacity]);
-  }
-  if (usesGeoIndex) tierCapacities.push(["geoIndex", geoUserCapacity]);
-  if (usesMediaPipeline) {
-    tierCapacities.push(["objectStorage", mediaStorageUserCapacity]);
-    tierCapacities.push(["cdn", mediaDeliveryUserCapacity]);
-  }
-  tierCapacities.sort((left, right) => left[1] - right[1]);
-  let bottleneckKind: ComponentKind | null = tierCapacities[0][0];
-  let diagnosis = "All request-path tiers are inside their operating envelope.";
-  if (incidentOpen) {
-    bottleneckKind = incident.affectedKind;
-    diagnosis = `${incident.title} in progress — ${incident.operatorPrompt}`;
-  } else if (capacity < demand) {
-    if (bottleneckKind === "loadBalancer") diagnosis = `Ingress is saturated at ${loadBalancerCapacity} req/s; traffic distribution limits throughput.`;
-    if (bottleneckKind === "api") diagnosis = `The API tier saturates at ${apiCapacity} req/s and limits request processing.`;
-    if (bottleneckKind === "postgres") {
-      diagnosis = counts.redis > 0
-        ? `The storage tier saturates at ${databaseCapacity} reads/s and limits throughput.`
-        : "Every redirect is reaching PostgreSQL on disk; storage limits both throughput and latency.";
-    }
-    if (bottleneckKind === "queue" || bottleneckKind === "worker") {
-      diagnosis = `Background jobs exceed the async pipeline's ${Math.round(asyncUserCapacity).toLocaleString("en-US")} r/s equivalent drain rate.`;
-    }
-    if (bottleneckKind === "geoIndex") {
-      diagnosis = effectiveCounts.geoIndex > 0
-        ? `Nearby lookup partitions saturate at ${Math.round(geoCapacity).toLocaleString("en-US")} searches/s.`
-        : "Nearby searches are scanning global profile data instead of bounded geographic partitions.";
-    }
-    if (bottleneckKind === "objectStorage") {
-      diagnosis = effectiveCounts.objectStorage > 0
-        ? `Media storage saturates at ${Math.round(objectStorageCapacity).toLocaleString("en-US")} objects/s.`
-        : "Large media objects are competing with transactional metadata in PostgreSQL.";
-    }
-    if (bottleneckKind === "cdn") {
-      diagnosis = effectiveCounts.cdn > 0
-        ? `Edge delivery saturates at ${Math.round(cdnCapacity).toLocaleString("en-US")} r/s.`
-        : "Playback traffic is reaching the origin without a regional delivery edge.";
-    }
-  } else if (latency > latencySlo) {
-    bottleneckKind = effectiveCounts.redis === 0 ? "redis" : bottleneckKind;
-    diagnosis = effectiveCounts.redis === 0
-      ? `Disk-backed reads push p95 over the ${latencySlo} ms latency SLO.`
-      : "The service is overloaded enough to create a latency queue.";
-  } else if (backgroundFraction > 0 && counts.queue === 0 && currentPhase.unlocks.includes("queue")) {
-    bottleneckKind = "queue";
-    diagnosis = "The user path is healthy, but background work still shares synchronous capacity.";
-  } else {
-    bottleneckKind = null;
-  }
-  return { capacity, latency, errors, hasCore, bottleneckKind, diagnosis, counts, effectiveCounts };
 }
 
 function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
@@ -3429,27 +3414,37 @@ function updateTelemetry() {
   const capacityMet = metrics.hasCore && metrics.capacity >= targetRps;
   const latencyMet = metrics.hasCore && metrics.latency <= latencySlo;
   const errorsMet = isRunning && currentDemand >= targetRps && metrics.errors < errorSlo;
-  const analyticsTopology = currentPhase.workload === "analytics" && "topology" in metrics ? metrics.topology : null;
+  const backgroundTopology = (currentPhase.workload === "analytics"
+    || currentPhase.workload === "streaming"
+    || currentPhase.workload === "dispatch") && "topology" in metrics
+    ? metrics.topology
+    : null;
+  const backgroundLabel = objectiveBackground.querySelector<HTMLElement>("span")!;
   updateMissionGuide(metrics);
   objectiveThroughput.dataset.met = String(capacityMet);
   objectiveLatency.dataset.met = String(latencyMet);
   objectiveErrors.dataset.met = String(errorsMet || testPhase === "passed");
-  objectiveBackground.hidden = analyticsTopology === null;
-  objectiveBackground.dataset.met = String(analyticsTopology?.backgroundHealthy ?? false);
-  objectiveBackground.dataset.risk = String(analyticsTopology !== null && !analyticsTopology.backgroundHealthy);
+  objectiveBackground.hidden = backgroundTopology === null;
+  objectiveBackground.dataset.met = String(backgroundTopology?.backgroundHealthy ?? false);
+  objectiveBackground.dataset.risk = String(backgroundTopology !== null && !backgroundTopology.backgroundHealthy);
   objectiveThroughputValue.textContent = `${Math.min(metrics.capacity, targetRps).toLocaleString("en-US")} / ${targetRps} r/s`;
   objectiveLatencyValue.textContent = `${metrics.hasCore ? metrics.latency : "—"} / ${latencySlo} ms`;
   objectiveErrorsValue.textContent = isRunning || testPhase === "passed" || testPhase === "failed"
     ? `${metrics.errors.toFixed(1)} / ${errorSlo.toFixed(1)}%`
     : "Run test";
-  if (analyticsTopology) {
-    objectiveBackground.dataset.mode = analyticsTopology.backgroundMode;
-    objectiveBackgroundValue.textContent = analyticsTopology.backgroundMode === "synchronous"
+  if (backgroundTopology) {
+    backgroundLabel.textContent = currentPhase.workload === "streaming"
+      ? "Transcode path"
+      : currentPhase.workload === "dispatch"
+        ? "Location events"
+        : "Analytics path";
+    objectiveBackground.dataset.mode = backgroundTopology.backgroundMode;
+    objectiveBackgroundValue.textContent = backgroundTopology.backgroundMode === "synchronous"
       ? "Delivered · blocking"
-      : analyticsTopology.backgroundHealthy
-        ? `${analyticsTopology.backgroundLagSeconds.toFixed(1)}s delivery lag`
-        : analyticsTopology.backgroundMode === "asynchronous"
-          ? `+${Math.round(analyticsTopology.backgroundBacklogRps)} evt/s backlog`
+      : backgroundTopology.backgroundHealthy
+        ? `${backgroundTopology.backgroundLagSeconds.toFixed(1)}s delivery lag`
+        : backgroundTopology.backgroundMode === "asynchronous"
+          ? `+${Math.round(backgroundTopology.backgroundBacklogRps)} ${currentPhase.workload === "streaming" ? "jobs" : "evt"}/s backlog`
           : "No delivery path";
   }
 
@@ -3487,7 +3482,7 @@ function updateTelemetry() {
   });
 
   if (testPhase === "idle") {
-    const backgroundMet = analyticsTopology?.backgroundHealthy ?? true;
+    const backgroundMet = backgroundTopology?.backgroundHealthy ?? true;
     const previewMeetsContract = capacityMet && latencyMet && backgroundMet;
     missionPhaseElement.textContent = previewMeetsContract
       ? "Ready to test"
@@ -3525,7 +3520,15 @@ function checkTopologyIncidentResponse() {
   incidentTaskCount.textContent = `${installedCount} / ${requiredCount} installed`;
   incidentTaskProgress.style.scale = `${Math.min(1, installedCount / Math.max(1, requiredCount))} 1`;
   if (installedCount < requiredCount) return;
-  if (topologyMode === "manual" && !calculateMetrics(Math.max(1, currentDemand)).hasCore) {
+  const responseMetrics = calculateMetrics(Math.max(1, currentDemand));
+  const newestResponseNode = nodes.filter((node) => node.kind === incidentResponseRequiredKind).at(-1);
+  const disconnectedIds = "topology" in responseMetrics
+    ? new Set(responseMetrics.topology.disconnectedNodeIds)
+    : null;
+  const newCapacityDisconnected = newestResponseNode
+    ? disconnectedIds?.has(String(newestResponseNode.id)) ?? false
+    : true;
+  if (topologyMode === "manual" && (!responseMetrics.hasCore || newCapacityDisconnected)) {
     incidentTaskCount.textContent = "Installed · not routed";
     incidentTaskProgress.style.scale = "0.82 1";
     incidentTaskTitle.textContent = `Wire ${definition.label} into the live path`;
@@ -4427,6 +4430,41 @@ function placeDemoMachinesUntil(kind: ComponentKind, requiredCount: number) {
   }
 }
 
+function provisionCertifiedSpecializedDemo() {
+  if (currentPhase.workload !== "matching"
+    && currentPhase.workload !== "streaming"
+    && currentPhase.workload !== "dispatch") return;
+  activeConfigs.add("autoscaling");
+  activeConfigs.add("walTuning");
+  activeConfigs.add("circuitBreaker");
+
+  if (currentPhase.workload === "streaming") {
+    const metadataDemand = targetRps * 0.22;
+    const playbackDemand = targetRps * 0.78;
+    const mediaJobDemand = targetRps * 0.18;
+    placeDemoMachinesUntil("loadBalancer", Math.ceil(metadataDemand / infrastructureComponentCapacity.loadBalancer));
+    placeDemoMachinesUntil("api", Math.ceil(metadataDemand / (infrastructureComponentCapacity.api * 1.35)));
+    placeDemoMachinesUntil("redis", Math.ceil(metadataDemand / infrastructureComponentCapacity.redis));
+    placeDemoMachinesUntil("postgres", Math.ceil(metadataDemand / (infrastructureComponentCapacity.postgres * 1.25 * 3.125)));
+    placeDemoMachinesUntil("queue", Math.ceil(mediaJobDemand / infrastructureComponentCapacity.queue));
+    placeDemoMachinesUntil("worker", Math.ceil(mediaJobDemand / infrastructureComponentCapacity.worker));
+    placeDemoMachinesUntil("objectStorage", Math.ceil(playbackDemand / infrastructureComponentCapacity.objectStorage));
+    placeDemoMachinesUntil("cdn", Math.ceil(playbackDemand / infrastructureComponentCapacity.cdn));
+    return;
+  }
+
+  placeDemoMachinesUntil("loadBalancer", Math.ceil(targetRps / infrastructureComponentCapacity.loadBalancer));
+  placeDemoMachinesUntil("api", Math.ceil(targetRps / (infrastructureComponentCapacity.api * 1.35)));
+  placeDemoMachinesUntil("redis", Math.ceil(targetRps / infrastructureComponentCapacity.redis));
+  placeDemoMachinesUntil("postgres", Math.ceil(targetRps / (infrastructureComponentCapacity.postgres * 1.25 * 3.125)));
+  placeDemoMachinesUntil("geoIndex", Math.ceil(targetRps / infrastructureComponentCapacity.geoIndex));
+  if (currentPhase.workload === "dispatch") {
+    const eventDemand = targetRps * 0.42;
+    placeDemoMachinesUntil("queue", Math.ceil(eventDemand / infrastructureComponentCapacity.queue));
+    placeDemoMachinesUntil("worker", Math.ceil(eventDemand / infrastructureComponentCapacity.worker));
+  }
+}
+
 const searchParams = new URLSearchParams(window.location.search);
 const requestedPhase = Number(searchParams.get("phase"));
 if (Number.isInteger(requestedPhase) && requestedPhase >= 0 && requestedPhase < campaignPhases.length) {
@@ -4486,8 +4524,10 @@ if (demoMode !== null) {
     placeComponent("postgres", { col: 7, row: 3 });
     if (diagnosisDemo) placeComponent("postgres", { col: 7, row: 5 });
     const coreCertificationDemo = demoMode === "certified" && currentPhase.workload === "general";
-    if (!releaseDemo && !coreCertificationDemo) placeComponent("queue", { col: 5, row: 5 });
-    if (!releaseDemo && !coreCertificationDemo) placeComponent("worker", { col: 5, row: 4 });
+    const specializedCertificationDemo = demoMode === "certified"
+      && (currentPhase.workload === "matching" || currentPhase.workload === "streaming" || currentPhase.workload === "dispatch");
+    if (!releaseDemo && !coreCertificationDemo && !specializedCertificationDemo) placeComponent("queue", { col: 5, row: 5 });
+    if (!releaseDemo && !coreCertificationDemo && !specializedCertificationDemo) placeComponent("worker", { col: 5, row: 4 });
     if (coreCertificationDemo) {
       const capacityTarget = Math.ceil(targetRps * (latencySlo <= 75 ? 1.085 : 1));
       placeDemoMachinesUntil("loadBalancer", Math.ceil(capacityTarget / coreComponentCapacity.loadBalancer));
@@ -4495,6 +4535,7 @@ if (demoMode !== null) {
       placeDemoMachinesUntil("redis", Math.ceil(capacityTarget / coreComponentCapacity.redis));
       placeDemoMachinesUntil("postgres", Math.ceil(capacityTarget / (coreComponentCapacity.postgres * 3.125)));
     }
+    if (demoMode === "certified") provisionCertifiedSpecializedDemo();
     if (demoMode === "config") openConfigScreen();
     else if (!diagnosisDemo) runButton.click();
     if (demoMode === "packets") {

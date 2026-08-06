@@ -5,6 +5,12 @@ import {
   evaluateSocialRedirectGraph,
 } from "../src/simulation/socialRedirects.ts";
 import { evaluateCoreServiceGraph } from "../src/simulation/coreService.ts";
+import {
+  evaluateDispatchGraph,
+  evaluateMatchingGraph,
+  evaluateStreamingGraph,
+  infrastructureComponentCapacity,
+} from "../src/simulation/specializedWorkloads.ts";
 import type {
   SimulationEdge,
   SimulationEdgeMode,
@@ -20,6 +26,54 @@ function node(id: string, kind: keyof typeof socialRedirectCapacity): Simulation
 
 function edge(from: string, to: string, mode: SimulationEdgeMode): SimulationEdge {
   return { from, to, mode };
+}
+
+function infrastructureNode(
+  id: string,
+  kind: keyof typeof infrastructureComponentCapacity,
+): SimulationNode {
+  return { id, kind, capacity: infrastructureComponentCapacity[kind] };
+}
+
+function replicas(kind: keyof typeof infrastructureComponentCapacity, count: number) {
+  return Array.from({ length: count }, (_, index) => infrastructureNode(`${kind}-${index + 1}`, kind));
+}
+
+function connectEvery(
+  fromNodes: SimulationNode[],
+  toNodes: SimulationNode[],
+  mode: SimulationEdgeMode,
+) {
+  const edgeCount = Math.max(fromNodes.length, toNodes.length);
+  return Array.from({ length: edgeCount }, (_, index) => edge(
+    fromNodes[index % fromNodes.length].id,
+    toNodes[index % toNodes.length].id,
+    mode,
+  ));
+}
+
+function nearbyGraph(withBackground = false): SimulationGraph {
+  const loadBalancers = replicas("loadBalancer", 9);
+  const apis = replicas("api", 29);
+  const caches = replicas("redis", 5);
+  const geoIndexes = replicas("geoIndex", 3);
+  const databases = replicas("postgres", 5);
+  const queues = withBackground ? replicas("queue", 3) : [];
+  const workers = withBackground ? replicas("worker", 3) : [];
+  return {
+    nodes: [...loadBalancers, ...apis, ...caches, ...geoIndexes, ...databases, ...queues, ...workers],
+    edges: [
+      ...connectEvery(loadBalancers, apis, "request"),
+      ...connectEvery(apis, caches, "request"),
+      ...connectEvery(caches, geoIndexes, "cache"),
+      ...connectEvery(geoIndexes, databases, "request"),
+      ...(withBackground ? [
+        ...connectEvery(apis, queues, "enqueue"),
+        ...connectEvery(queues, workers, "consume"),
+        ...connectEvery(workers, databases, "commit"),
+      ] : []),
+    ],
+  };
 }
 
 function inheritedGraph(): SimulationGraph {
@@ -226,4 +280,94 @@ test("a replicated standby is functional without pretending to serve reads", () 
 
   assert.equal(result.capacity, 300);
   assert.ok(!result.disconnectedNodeIds.includes("standby"));
+});
+
+test("nearby matching credits only geoshards on a complete query path", () => {
+  const graph = nearbyGraph();
+  graph.edges = graph.edges.filter((candidate) => candidate.from !== "geoIndex-3" && candidate.to !== "geoIndex-3");
+  const options = { demand: 6_200, latencySlo: 68, errorSlo: 0.18 };
+
+  const disconnected = evaluateMatchingGraph(graph, options);
+  assert.equal(disconnected.capacity, 6_400);
+  assert.ok(disconnected.disconnectedNodeIds.includes("geoIndex-3"));
+  assert.equal(disconnected.meetsContract, true);
+
+  graph.edges.push(
+    edge("redis-3", "geoIndex-3", "cache"),
+    edge("geoIndex-3", "postgres-3", "request"),
+  );
+  const connected = evaluateMatchingGraph(graph, options);
+  assert.equal(connected.capacity, 8_550);
+  assert.ok(!connected.disconnectedNodeIds.includes("geoIndex-3"));
+});
+
+test("dispatch can be valid synchronously, but async location updates protect p95", () => {
+  const graph = nearbyGraph(true);
+  const options = { demand: 8_500, latencySlo: 48, errorSlo: 0.1 };
+  graph.edges = graph.edges.filter((candidate) => candidate.mode !== "enqueue" && candidate.mode !== "consume");
+  graph.edges.push(...connectEvery(
+    graph.nodes.filter((candidate) => candidate.kind === "api"),
+    graph.nodes.filter((candidate) => candidate.kind === "worker"),
+    "request",
+  ));
+
+  const synchronous = evaluateDispatchGraph(graph, options);
+  assert.equal(synchronous.backgroundMode, "synchronous");
+  assert.ok(synchronous.latency > options.latencySlo);
+  assert.equal(synchronous.meetsContract, false);
+
+  graph.edges = graph.edges.filter((candidate) => !(candidate.mode === "request" && candidate.to.startsWith("worker-")));
+  graph.edges.push(
+    ...connectEvery(
+      graph.nodes.filter((candidate) => candidate.kind === "api"),
+      graph.nodes.filter((candidate) => candidate.kind === "queue"),
+      "enqueue",
+    ),
+    ...connectEvery(
+      graph.nodes.filter((candidate) => candidate.kind === "queue"),
+      graph.nodes.filter((candidate) => candidate.kind === "worker"),
+      "consume",
+    ),
+  );
+  const asynchronous = evaluateDispatchGraph(graph, options);
+  assert.equal(asynchronous.backgroundMode, "asynchronous");
+  assert.ok(asynchronous.latency <= options.latencySlo);
+  assert.equal(asynchronous.meetsContract, true);
+});
+
+test("streaming certifies metadata, playback, and transcode routes independently", () => {
+  const loadBalancers = replicas("loadBalancer", 2);
+  const apis = replicas("api", 6);
+  const caches = replicas("redis", 2);
+  const databases = replicas("postgres", 2);
+  const queues = replicas("queue", 2);
+  const workers = replicas("worker", 1);
+  const storage = replicas("objectStorage", 2);
+  const edges = replicas("cdn", 2);
+  const graph: SimulationGraph = {
+    nodes: [...loadBalancers, ...apis, ...caches, ...databases, ...queues, ...workers, ...storage, ...edges],
+    edges: [
+      ...connectEvery(loadBalancers, apis, "request"),
+      ...connectEvery(apis, caches, "request"),
+      ...connectEvery(caches, databases, "cache"),
+      ...connectEvery(apis, queues, "enqueue"),
+      ...connectEvery(queues, workers, "consume"),
+      ...connectEvery(workers, storage, "commit"),
+      ...connectEvery(edges, storage, "cache"),
+    ],
+  };
+  const options = { demand: 8_000, latencySlo: 58, errorSlo: 0.12 };
+
+  const healthy = evaluateStreamingGraph(graph, options);
+  assert.equal(Math.round(healthy.capacity), 8_182);
+  assert.equal(healthy.backgroundMode, "asynchronous");
+  assert.equal(healthy.meetsContract, true);
+
+  graph.edges = graph.edges.filter((candidate) => candidate.from !== "cdn-2");
+  const brokenDelivery = evaluateStreamingGraph(graph, options);
+  assert.equal(brokenDelivery.hasResponsePath, true);
+  assert.equal(Math.round(brokenDelivery.routeCapacities.request), 8_182);
+  assert.equal(Math.round(brokenDelivery.capacity), 5_128);
+  assert.equal(brokenDelivery.bottleneckKind, "cdn");
+  assert.equal(brokenDelivery.meetsContract, false);
 });

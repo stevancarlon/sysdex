@@ -88,6 +88,7 @@ export type ServiceEvaluation = {
   backgroundLagSeconds: number;
   backgroundHealthy: boolean;
   backgroundProcessorCount: number;
+  backgroundBottleneckKind: string | null;
   cacheOperational: boolean;
 };
 
@@ -185,6 +186,7 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
   let backgroundCapacity = contract.background ? 0 : Number.POSITIVE_INFINITY;
   let backgroundIngressCapacity = contract.background ? 0 : Number.POSITIVE_INFINITY;
   let backgroundProcessorCount = 0;
+  let backgroundBottleneckKind = contract.background?.queueKind ?? null;
 
   if (hasResponsePath && contract.background) {
     const background = contract.background;
@@ -222,27 +224,42 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
     if (enqueuedQueueIds.size > 0) {
       backgroundMode = "asynchronous";
       backgroundIngressCapacity = queueCapacity / background.trafficFraction;
+      backgroundBottleneckKind = background.processorKind;
       for (const id of enqueuedQueueIds) functionalNodeIds.add(id);
     }
     if (asynchronousProcessorIds.length > 0) {
       const processorCapacity = sumCapacity(asynchronousProcessorIds.map((id) => nodeById.get(id)).filter((node): node is SimulationNode => Boolean(node)));
       backgroundMode = "asynchronous";
       backgroundCapacity = Math.min(queueCapacity, processorCapacity) / background.trafficFraction;
+      backgroundBottleneckKind = queueCapacity <= processorCapacity
+        ? background.queueKind
+        : background.processorKind;
       backgroundProcessorCount = asynchronousProcessorIds.reduce(
         (total, id) => total + stateMultiplier(nodeById.get(id)?.state),
         0,
       );
       for (const id of asynchronousProcessorIds) functionalNodeIds.add(id);
+      for (const edge of activeEdges) {
+        if (edge.mode === "commit" && asynchronousProcessorIds.includes(edge.from) && validSinkIds.has(edge.to)) {
+          functionalNodeIds.add(edge.to);
+        }
+      }
     }
     if (synchronousProcessorIds.length > 0) {
       backgroundMode = "synchronous";
       const synchronousCapacity = sumCapacity(synchronousProcessorIds.map((id) => nodeById.get(id)).filter((node): node is SimulationNode => Boolean(node))) / background.trafficFraction;
       backgroundCapacity = Math.max(backgroundCapacity, synchronousCapacity);
+      backgroundBottleneckKind = background.processorKind;
       backgroundProcessorCount = synchronousProcessorIds.reduce(
         (total, id) => total + stateMultiplier(nodeById.get(id)?.state),
         0,
       );
       for (const id of synchronousProcessorIds) functionalNodeIds.add(id);
+      for (const edge of activeEdges) {
+        if (edge.mode === "commit" && synchronousProcessorIds.includes(edge.from) && validSinkIds.has(edge.to)) {
+          functionalNodeIds.add(edge.to);
+        }
+      }
     }
   }
 
@@ -256,7 +273,7 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
   }
 
   if (contract.background) tierCapacities.push({
-    kind: backgroundMode === "asynchronous" ? contract.background.queueKind : contract.background.processorKind,
+    kind: backgroundBottleneckKind ?? contract.background.processorKind,
     capacity: backgroundCapacity,
   });
 
@@ -283,7 +300,7 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
     .filter((tier) => Number.isFinite(tier.capacity))
     .sort((left, right) => left.capacity - right.capacity)[0];
   const backgroundBottleneck = contract.background && !backgroundHealthy
-    ? tierCapacities.find((tier) => tier.kind === (backgroundMode === "asynchronous" ? contract.background!.queueKind : contract.background!.processorKind))
+    ? tierCapacities.find((tier) => tier.kind === backgroundBottleneckKind)
     : null;
   const bottleneckTier = requestCapacity < contract.demand ? responseBottleneck : backgroundBottleneck ?? responseBottleneck;
   const utilization = contract.demand / Math.max(1, requestCapacity);
@@ -349,6 +366,7 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
     backgroundLagSeconds,
     backgroundHealthy,
     backgroundProcessorCount,
+    backgroundBottleneckKind,
     cacheOperational,
   };
 }
