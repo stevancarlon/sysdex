@@ -183,6 +183,8 @@ These should emerge from shared rules, not bespoke incident scripts.
 
 ## Migration plan
 
+Implementation checkpoint: Phase 2 now runs through the UI-independent directed-graph evaluator in `src/simulation/`. Request capacity only credits machines on a complete response path; synchronous calls, asynchronous queues, consumers, commits, failures, event backlog, and delivery lag are evaluated from edge semantics. The remaining phases still use the transitional count model while the same engine is expanded.
+
 ### 1. Extract the domain model
 
 Move components, graph state, workload, and metrics into a UI-independent `simulation/` module. Preserve the current renderer as a client of that state.

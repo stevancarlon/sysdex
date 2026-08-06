@@ -10,6 +10,8 @@ import {
   type ComponentKind,
   type ConfigId,
 } from "./campaign";
+import { type SimulationEdgeMode, type SimulationGraph } from "./simulation/graph.ts";
+import { evaluateSocialRedirectGraph, socialRedirectCapacity } from "./simulation/socialRedirects.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -40,6 +42,9 @@ type PlacedComponent = {
 };
 
 type Connection = {
+  from: PlacedComponent;
+  to: PlacedComponent;
+  mode: SimulationEdgeMode;
   curve: THREE.CatmullRomCurve3;
   material: THREE.MeshStandardMaterial;
   annotation: HTMLDivElement | null;
@@ -345,6 +350,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="objective-row" id="objective-errors" data-met="false">
             <span>Error rate</span><strong id="objective-errors-value">Run test</strong>
           </div>
+          <div class="objective-row" id="objective-background" data-met="false" hidden>
+            <span>Analytics path</span><strong id="objective-background-value">No delivery path</strong>
+          </div>
         </div>
       </section>
     </header>
@@ -531,9 +539,11 @@ const missionGuideTitle = document.querySelector<HTMLElement>("#mission-guide-ti
 const objectiveThroughput = document.querySelector<HTMLElement>("#objective-throughput")!;
 const objectiveLatency = document.querySelector<HTMLElement>("#objective-latency")!;
 const objectiveErrors = document.querySelector<HTMLElement>("#objective-errors")!;
+const objectiveBackground = document.querySelector<HTMLElement>("#objective-background")!;
 const objectiveThroughputValue = document.querySelector<HTMLElement>("#objective-throughput-value")!;
 const objectiveLatencyValue = document.querySelector<HTMLElement>("#objective-latency-value")!;
 const objectiveErrorsValue = document.querySelector<HTMLElement>("#objective-errors-value")!;
+const objectiveBackgroundValue = document.querySelector<HTMLElement>("#objective-background-value")!;
 const testPhaseElement = document.querySelector<HTMLElement>("#test-phase")!;
 const testTimeElement = document.querySelector<HTMLElement>("#test-time")!;
 const testProgressFill = document.querySelector<HTMLElement>("#test-progress-fill")!;
@@ -2402,6 +2412,7 @@ function connect(
   from: PlacedComponent | undefined,
   to: PlacedComponent | undefined,
   label: string | null = null,
+  mode: SimulationEdgeMode = "request",
 ) {
   if (!from || !to) return null;
   const start = from.group.position.clone().setY(0.49);
@@ -2434,6 +2445,9 @@ function connect(
     document.querySelector(".game-shell")!.append(annotation);
   }
   const connection: Connection = {
+    from,
+    to,
+    mode,
     curve,
     material: cableMaterial,
     annotation,
@@ -2463,7 +2477,7 @@ function rebuildConnections() {
   trafficRoutes.length = 0;
   nextTrafficRoute = 0;
 
-  const loadBalancer = firstNode("loadBalancer");
+  const loadBalancers = nodes.filter((node) => node.kind === "loadBalancer");
   const apiNodes = nodes.filter((node) => node.kind === "api");
   const redisNodes = nodes.filter((node) => node.kind === "redis");
   const postgresNodes = nodes.filter((node) => node.kind === "postgres");
@@ -2477,7 +2491,7 @@ function rebuildConnections() {
   const primaryPostgres = postgresNodes[0];
   const usesGeoPath = currentPhase.workload === "matching" || currentPhase.workload === "dispatch";
   const archiveReplicationRoutes = postgresNodes.slice(1).map((replica, index) => [
-    connect(primaryPostgres, replica, index === 0 ? "REPLICA STREAM" : null),
+    connect(primaryPostgres, replica, index === 0 ? "REPLICA STREAM" : null, "replicate"),
   ].filter((connection): connection is Connection => connection !== null));
   const geoArchiveByNode = new Map<PlacedComponent, Connection | null>();
   for (const [index, geoNode] of geoNodes.entries()) {
@@ -2485,6 +2499,7 @@ function rebuildConnections() {
       geoNode,
       postgresNodes[index % Math.max(1, postgresNodes.length)],
       index === 0 ? "PROFILE SHARD" : null,
+      "request",
     ));
   }
   const cacheDownstreamByNode = new Map<PlacedComponent, Connection | null>();
@@ -2492,16 +2507,16 @@ function rebuildConnections() {
     const downstream = usesGeoPath
       ? geoNodes[index % Math.max(1, geoNodes.length)]
       : postgresNodes[index % Math.max(1, postgresNodes.length)];
-    cacheDownstreamByNode.set(redisNode, connect(redisNode, downstream, index === 0 ? "CACHE FILL" : "CACHE SHARD"));
+    cacheDownstreamByNode.set(redisNode, connect(redisNode, downstream, index === 0 ? "CACHE FILL" : "CACHE SHARD", "cache"));
   }
-  const edgeIngress = cdnNodes.map((cdn, index) => connect(cdn, loadBalancer, index === 0 ? "EDGE REQUEST" : null));
+  const edgeIngress = cdnNodes.map((cdn, index) => connect(cdn, loadBalancers[index % Math.max(1, loadBalancers.length)], index === 0 ? "EDGE REQUEST" : null));
   const edgeMediaRoutes = cdnNodes.map((cdn, index) => [
-    connect(cdn, objectStorageNodes[index % Math.max(1, objectStorageNodes.length)], index === 0 ? "EDGE MEDIA FILL" : null),
+    connect(cdn, objectStorageNodes[index % Math.max(1, objectStorageNodes.length)], index === 0 ? "EDGE MEDIA FILL" : null, "cache"),
   ].filter((connection): connection is Connection => connection !== null));
   const ingressByApi = new Map<PlacedComponent, Connection | null>();
 
   for (const [index, api] of apiNodes.entries()) {
-    const ingress = connect(loadBalancer, api, index === 0 ? "INGRESS REQUEST" : null);
+    const ingress = connect(loadBalancers[index % Math.max(1, loadBalancers.length)], api, index === 0 ? "INGRESS REQUEST" : null);
     const redis = redisNodes[index % Math.max(1, redisNodes.length)];
     const geoIndex = geoNodes[index % Math.max(1, geoNodes.length)];
     const postgres = postgresNodes[index % Math.max(1, postgresNodes.length)];
@@ -2527,19 +2542,20 @@ function rebuildConnections() {
     : currentPhase.workload === "dispatch"
       ? "LOCATION EVENT"
       : "ASYNC EVENT · NON-BLOCKING";
-  const asyncEvent = connect(primaryApi, queue, asyncEventLabel);
+  const asyncEvent = connect(primaryApi, queue, asyncEventLabel, "enqueue");
   for (const [index, worker] of workers.entries()) {
     const synchronousAnalytics = currentPhase.workload === "analytics" && !queue;
     const apiToWorker = synchronousAnalytics
       ? connect(apiNodes[index % Math.max(1, apiNodes.length)], worker, index === 0 ? "SYNC CALL · BLOCKING" : null)
       : null;
-    const queueToWorker = synchronousAnalytics ? null : connect(queue, worker, index === 0 ? "CONSUME JOB" : null);
+    const queueToWorker = synchronousAnalytics ? null : connect(queue, worker, index === 0 ? "CONSUME JOB" : null, "consume");
     const workerCommit = connect(
       worker,
       currentPhase.workload === "streaming"
         ? objectStorageNodes[index % Math.max(1, objectStorageNodes.length)]
         : postgresNodes[index % Math.max(1, postgresNodes.length)],
       index === 0 ? (currentPhase.workload === "streaming" ? "WRITE MEDIA" : "ASYNC COMMIT") : null,
+      "commit",
     );
     const sourceApi = apiNodes[index % Math.max(1, apiNodes.length)];
     const asyncRoute = [sourceApi ? ingressByApi.get(sourceApi) ?? null : null, apiToWorker ?? asyncEvent, queueToWorker, workerCommit].filter(
@@ -2549,6 +2565,105 @@ function rebuildConnections() {
   }
   for (const route of edgeMediaRoutes) if (route.length > 0) trafficRoutes.push(route);
   for (const route of archiveReplicationRoutes) if (route.length > 0) trafficRoutes.push(route);
+}
+
+function evaluateAnalyticsMetrics(
+  demand: number,
+  counts: Record<ComponentKind, number>,
+  effectiveCounts: Record<ComponentKind, number>,
+  incidentOpen: boolean,
+  recoveryProgress: number,
+  incidentCapacityMultiplier: number,
+) {
+  const simulationGraph: SimulationGraph = {
+    nodes: nodes.map((node) => {
+      const baseCapacity = socialRedirectCapacity[node.kind as keyof typeof socialRedirectCapacity] ?? 0;
+      const configCapacityMultiplier = node.kind === "api" && activeConfigs.has("autoscaling")
+        ? 1.35
+        : node.kind === "postgres" && activeConfigs.has("walTuning")
+          ? 1.25
+          : 1;
+      const affectedByIncident = incidentOpen && node.kind === currentPhase.incident.affectedKind;
+      return {
+        id: String(node.id),
+        kind: node.kind,
+        capacity: baseCapacity * configCapacityMultiplier,
+        state: node.state,
+        capacityMultiplier: affectedByIncident ? incidentCapacityMultiplier : 1,
+      };
+    }),
+    edges: connections.map((connection) => ({
+      from: String(connection.from.id),
+      to: String(connection.to.id),
+      mode: connection.mode,
+    })),
+  };
+  const topology = evaluateSocialRedirectGraph(simulationGraph, {
+    demand,
+    latencySlo,
+    errorSlo,
+  });
+  const incidentLatency = incidentOpen
+    ? currentPhase.incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
+    : 0;
+  const incidentErrors = incidentOpen
+    ? currentPhase.incident.errorPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.32 : 1)
+    : 0;
+  const latency = topology.hasResponsePath ? Math.round(topology.latency + incidentLatency) : 0;
+  const errors = topology.errors + incidentErrors;
+  let bottleneckKind = topology.bottleneckKind as ComponentKind | null;
+  let diagnosis = "Every required request and event path is inside its operating envelope.";
+
+  if (!topology.hasResponsePath) {
+    bottleneckKind = currentPhase.incident.affectedKind ?? topology.missingKinds[0] as ComponentKind | null;
+    diagnosis = incidentOpen
+      ? `${currentPhase.incident.title}: the failure cut the only healthy route from ingress to durable data.`
+      : "The topology has no complete healthy route from Load Balancer through API Server to PostgreSQL.";
+  } else if (incidentOpen) {
+    bottleneckKind = currentPhase.incident.affectedKind;
+    diagnosis = `${currentPhase.incident.title} in progress — ${currentPhase.incident.operatorPrompt}`;
+  } else if (!topology.backgroundHealthy) {
+    bottleneckKind = "worker";
+    diagnosis = topology.backgroundMode === "asynchronous"
+      ? `Redirects respond, but Analytics Service cannot drain ${Math.round(topology.backgroundArrivalRps).toLocaleString("en-US")} click events/s. The queue backlog keeps growing.`
+      : "Redirects respond, but click events have no complete path to Analytics Service and durable storage.";
+  } else if (topology.capacity < demand) {
+    if (topology.backgroundMode === "missing") {
+      bottleneckKind = "worker";
+      diagnosis = "Click events leave the API, but no complete path can deliver and commit them to analytics storage.";
+    } else if (bottleneckKind === "loadBalancer") {
+      diagnosis = `Only connected ingress machines contribute; the live route carries ${Math.round(topology.capacity).toLocaleString("en-US")} r/s.`;
+    } else if (bottleneckKind === "api") {
+      diagnosis = `Connected API replicas saturate at ${Math.round(topology.capacity).toLocaleString("en-US")} r/s.`;
+    } else if (bottleneckKind === "redis" || bottleneckKind === "postgres") {
+      diagnosis = `The reachable data path saturates at ${Math.round(topology.capacity).toLocaleString("en-US")} r/s.`;
+    } else {
+      diagnosis = `The connected ${bottleneckKind ? contextualComponentLabel(bottleneckKind) : "background"} path cannot drain the offered workload.`;
+    }
+  } else if (latency > latencySlo && topology.backgroundMode === "synchronous") {
+    bottleneckKind = "queue";
+    const synchronousPenalty = Math.round(60 / Math.max(1, topology.backgroundProcessorCount));
+    diagnosis = `The API waits for Analytics Service before responding. The synchronous edge adds ${synchronousPenalty} ms at p95.`;
+  } else if (latency > latencySlo) {
+    diagnosis = `The connected request path reaches p95 ${latency} ms under load, above the ${latencySlo} ms SLO.`;
+  } else if (topology.backgroundMode === "synchronous") {
+    bottleneckKind = "queue";
+    diagnosis = "The SLO passes through extra analytics capacity, but user responses still depend on that synchronous service.";
+  } else {
+    bottleneckKind = null;
+  }
+
+  return {
+    capacity: topology.capacity,
+    latency,
+    errors,
+    hasCore: topology.hasResponsePath,
+    bottleneckKind,
+    diagnosis,
+    counts,
+    effectiveCounts,
+    topology,
+  };
 }
 
 function calculateMetrics(demand = targetRps) {
@@ -2573,6 +2688,16 @@ function calculateMetrics(demand = targetRps) {
   }
   if (incident.affectedKind === "postgres" && activeConfigs.has("multiAz")) {
     incidentCapacityMultiplier = Math.max(0.8, incidentCapacityMultiplier);
+  }
+  if (currentPhase.workload === "analytics") {
+    return evaluateAnalyticsMetrics(
+      demand,
+      counts,
+      effectiveCounts,
+      incidentOpen,
+      recoveryProgress,
+      incidentCapacityMultiplier,
+    );
   }
 
   let loadBalancerCapacity = effectiveCounts.loadBalancer * 950;
@@ -2613,13 +2738,11 @@ function calculateMetrics(demand = targetRps) {
 
   const usesGeoIndex = currentPhase.workload === "matching" || currentPhase.workload === "dispatch";
   const usesMediaPipeline = currentPhase.workload === "streaming";
-  const backgroundFraction = currentPhase.workload === "analytics"
-    ? 0.32
-    : currentPhase.workload === "streaming"
-      ? 0.18
-      : currentPhase.workload === "dispatch"
-        ? 0.42
-        : 0;
+  const backgroundFraction = currentPhase.workload === "streaming"
+    ? 0.18
+    : currentPhase.workload === "dispatch"
+      ? 0.42
+      : 0;
   const hasQueue = effectiveCounts.queue >= 0.5;
   const hasWorker = effectiveCounts.worker >= 0.5;
   const asyncUserCapacity = backgroundFraction === 0
@@ -2652,9 +2775,6 @@ function calculateMetrics(demand = targetRps) {
   const asyncPipelineOperational = backgroundFraction === 0 || (hasQueue && hasWorker && asyncUserCapacity >= demand);
   const asyncBenefit = backgroundFraction > 0 && asyncPipelineOperational ? 12 : 0;
   const missingWorkerPenalty = backgroundFraction > 0 && !hasWorker ? 64 : 0;
-  const synchronousAnalyticsPenalty = currentPhase.workload === "analytics" && hasWorker && !hasQueue
-    ? 60 / Math.max(1, effectiveCounts.worker)
-    : 0;
   const geoPenalty = usesGeoIndex && effectiveCounts.geoIndex === 0 ? 95 : 0;
   const geoBenefit = usesGeoIndex && effectiveCounts.geoIndex > 0 ? 20 : 0;
   const objectStoragePenalty = usesMediaPipeline && effectiveCounts.objectStorage === 0 ? 82 : 0;
@@ -2670,7 +2790,6 @@ function calculateMetrics(demand = targetRps) {
     30,
     baseLatency
       + missingWorkerPenalty
-      + synchronousAnalyticsPenalty
       + geoPenalty
       + objectStoragePenalty
       - asyncBenefit
@@ -2734,18 +2853,13 @@ function calculateMetrics(demand = targetRps) {
         : "Playback traffic is reaching the origin without a regional delivery edge.";
     }
   } else if (latency > latencySlo) {
-    if (currentPhase.workload === "analytics" && hasWorker && !hasQueue) {
-      bottleneckKind = "queue";
-      diagnosis = `The API waits for Analytics Service before responding. The synchronous call adds ${Math.round(synchronousAnalyticsPenalty)} ms at p95.`;
-    } else {
-      bottleneckKind = effectiveCounts.redis === 0 ? "redis" : bottleneckKind;
-      diagnosis = effectiveCounts.redis === 0
-        ? `Disk-backed reads push p95 over the ${latencySlo} ms latency SLO.`
-        : "The service is overloaded enough to create a latency queue.";
-    }
+    bottleneckKind = effectiveCounts.redis === 0 ? "redis" : bottleneckKind;
+    diagnosis = effectiveCounts.redis === 0
+      ? `Disk-backed reads push p95 over the ${latencySlo} ms latency SLO.`
+      : "The service is overloaded enough to create a latency queue.";
   } else if (backgroundFraction > 0 && counts.queue === 0 && currentPhase.unlocks.includes("queue")) {
     bottleneckKind = "queue";
-    diagnosis = "The redirect path is healthy, but analytics work still shares the synchronous request path.";
+    diagnosis = "The user path is healthy, but background work still shares synchronous capacity.";
   } else {
     bottleneckKind = null;
   }
@@ -2788,7 +2902,14 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
     } else if (currentPhaseIndex === 1 && metrics.hasCore) {
       const analyticsWorkers = metrics.counts.worker;
       const hasAsyncQueue = metrics.counts.queue > 0;
-      if (hasAsyncQueue && metrics.latency <= latencySlo) {
+      const topology = "topology" in metrics ? metrics.topology : null;
+      if (topology && !topology.backgroundHealthy) {
+        stage = "Guided diagnosis · Follow the event path";
+        title = topology.backgroundMode === "asynchronous" ? "The queue is filling faster than it drains" : "Click events have nowhere to go";
+        description = topology.backgroundMode === "asynchronous"
+          ? "Redirects are fast, but queued events never reach a healthy consumer and durable commit. Trace the cable after the asynchronous boundary."
+          : "The user request path works, but the analytics contract is incomplete. Trace where a click event should be processed and stored.";
+      } else if (hasAsyncQueue && metrics.latency <= latencySlo) {
         stage = "Guided diagnosis · Compare the new path";
         title = "Analytics no longer blocks redirects";
         description = "The API publishes an event and responds immediately; Analytics Service consumes it later. Notice the NON-BLOCKING route and lower p95.";
@@ -2904,7 +3025,8 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
     runButton.dataset.ready = "false";
     runButton.textContent = "Abort traffic test · T";
   } else {
-    const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo;
+    const contractReady = !("topology" in metrics) || metrics.topology.meetsContract;
+    const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo && contractReady;
     runButton.disabled = !metrics.hasCore;
     runButton.dataset.ready = String(previewReady);
     runButton.textContent = !metrics.hasCore
@@ -2948,15 +3070,29 @@ function updateTelemetry() {
   const capacityMet = metrics.hasCore && metrics.capacity >= targetRps;
   const latencyMet = metrics.hasCore && metrics.latency <= latencySlo;
   const errorsMet = isRunning && currentDemand >= targetRps && metrics.errors < errorSlo;
+  const analyticsTopology = "topology" in metrics ? metrics.topology : null;
   updateMissionGuide(metrics);
   objectiveThroughput.dataset.met = String(capacityMet);
   objectiveLatency.dataset.met = String(latencyMet);
   objectiveErrors.dataset.met = String(errorsMet || testPhase === "passed");
+  objectiveBackground.hidden = analyticsTopology === null;
+  objectiveBackground.dataset.met = String(analyticsTopology?.backgroundHealthy ?? false);
+  objectiveBackground.dataset.risk = String(analyticsTopology !== null && !analyticsTopology.backgroundHealthy);
   objectiveThroughputValue.textContent = `${Math.min(metrics.capacity, targetRps).toLocaleString("en-US")} / ${targetRps} r/s`;
   objectiveLatencyValue.textContent = `${metrics.hasCore ? metrics.latency : "—"} / ${latencySlo} ms`;
   objectiveErrorsValue.textContent = isRunning || testPhase === "passed" || testPhase === "failed"
     ? `${metrics.errors.toFixed(1)} / ${errorSlo.toFixed(1)}%`
     : "Run test";
+  if (analyticsTopology) {
+    objectiveBackground.dataset.mode = analyticsTopology.backgroundMode;
+    objectiveBackgroundValue.textContent = analyticsTopology.backgroundMode === "synchronous"
+      ? "Delivered · blocking"
+      : analyticsTopology.backgroundHealthy
+        ? `${analyticsTopology.backgroundLagSeconds.toFixed(1)}s delivery lag`
+        : analyticsTopology.backgroundMode === "asynchronous"
+          ? `+${Math.round(analyticsTopology.backgroundBacklogRps)} evt/s backlog`
+          : "No delivery path";
+  }
 
   bottleneckElement.textContent = metrics.diagnosis;
   bottleneckElement.dataset.state = metrics.bottleneckKind === null ? "healthy" : "warning";
@@ -2980,13 +3116,16 @@ function updateTelemetry() {
   });
 
   if (testPhase === "idle") {
-    missionPhaseElement.textContent = capacityMet && latencyMet
+    const backgroundMet = analyticsTopology?.backgroundHealthy ?? true;
+    const previewMeetsContract = capacityMet && latencyMet && backgroundMet;
+    missionPhaseElement.textContent = previewMeetsContract
       ? "Ready to test"
       : currentPhaseIndex <= 1
         ? "Guided build"
         : "Independent build";
     testPhaseElement.textContent = metrics.hasCore ? "Topology preview" : "Awaiting topology";
-    testTimeElement.textContent = "READY";
+    testTimeElement.textContent = previewMeetsContract ? "READY" : "CHECK";
+    testTimeElement.dataset.state = previewMeetsContract ? "ready" : "warning";
     testProgressFill.style.scale = "0 1";
   }
 }
@@ -3260,6 +3399,7 @@ function startTest() {
   stableElapsed = 0;
   currentDemand = Math.max(100, Math.round(targetRps * 0.2));
   packetAccumulator = 0;
+  testTimeElement.dataset.state = "live";
   syncTestControls();
   missionPhaseElement.textContent = "Traffic ramp";
   showToast(`Traffic generator online. Demand is ramping to ${targetRps.toLocaleString("en-US")} requests per second.`);
@@ -3304,7 +3444,12 @@ function updateTest(delta: number) {
   }
 
   testPhase = "holding";
-  const healthy = incidentMode === "resolved" && metrics.capacity >= targetRps && metrics.latency <= latencySlo && metrics.errors < errorSlo;
+  const contractHealthy = !("topology" in metrics) || metrics.topology.meetsContract;
+  const healthy = incidentMode === "resolved"
+    && metrics.capacity >= targetRps
+    && metrics.latency <= latencySlo
+    && metrics.errors < errorSlo
+    && contractHealthy;
   stableElapsed = healthy
     ? Math.min(certificationDuration, stableElapsed + delta)
     : Math.max(0, stableElapsed - delta * 1.5);
@@ -3860,9 +4005,13 @@ if (demoMode !== null) {
     updateTelemetry();
   }
   closeCampaignScreen();
-  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-failed") {
+  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-backlog" || demoMode === "analytics-failed") {
     loadInheritedScenario(1);
-    if (demoMode === "analytics-queue") placeComponent("queue", { col: 5, row: 4 });
+    if (demoMode === "analytics-queue" || demoMode === "analytics-backlog") placeComponent("queue", { col: 5, row: 4 });
+    if (demoMode === "analytics-backlog") {
+      const inheritedWorker = nodes.find((node) => node.kind === "worker");
+      if (inheritedWorker) removeNode(inheritedWorker);
+    }
     if (demoMode === "analytics-scale") placeComponent("worker", { col: 7, row: 5 });
     updateUi();
     updateTelemetry();

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node --test --experimental-transform-types --disable-warning=ExperimentalWarning tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
