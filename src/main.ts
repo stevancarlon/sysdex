@@ -177,6 +177,22 @@ const rampDuration = 5;
 let certificationDuration = currentPhase.certificationSeconds;
 let testTimeLimit = currentPhase.testTimeLimit;
 
+function contextualComponentLabel(kind: ComponentKind) {
+  if (kind !== "worker") return componentDefinitions[kind].label;
+  if (currentPhase.workload === "analytics") return "Analytics Service";
+  if (currentPhase.workload === "streaming") return "Transcode Worker";
+  if (currentPhase.workload === "dispatch") return "Location Worker";
+  return componentDefinitions.worker.label;
+}
+
+function contextualComponentRole(kind: ComponentKind) {
+  if (kind !== "worker") return componentDefinitions[kind].role;
+  if (currentPhase.workload === "analytics") return "Click-event processor";
+  if (currentPhase.workload === "streaming") return "Video job processor";
+  if (currentPhase.workload === "dispatch") return "Location-event processor";
+  return componentDefinitions.worker.role;
+}
+
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="game-shell">
     <canvas id="game-canvas" aria-label="Isometric system design workspace"></canvas>
@@ -227,13 +243,25 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <section class="briefing-step briefing-assignment briefing-enter-item">
             <span class="briefing-step-number">1</span>
             <div class="briefing-step-content">
-              <p class="briefing-step-label">Build this</p>
+              <p class="briefing-step-label" id="briefing-assignment-label">Build this</p>
               <h3 id="phase-briefing-assignment"></h3>
               <p id="phase-briefing-lesson"></p>
+              <div class="briefing-context" id="briefing-context" hidden>
+                <div>
+                  <small>Inherited request path</small>
+                  <strong>API → Analytics Service → Response</strong>
+                  <p>Every redirect waits for click tracking to finish.</p>
+                </div>
+                <div>
+                  <small>Engineering question</small>
+                  <strong>Must analytics finish first?</strong>
+                  <p>Trace the blocking cable, then redesign the boundary.</p>
+                </div>
+              </div>
               <div class="briefing-toolbox">
                 <div class="briefing-toolbox-heading">
-                  <span>Available parts</span>
-                  <strong>Budget <b id="briefing-target-budget">$850</b></strong>
+                  <span id="briefing-toolbox-label">Available parts</span>
+                  <strong><span id="briefing-budget-label">Budget</span> <b id="briefing-target-budget">$850</b></strong>
                 </div>
                 <div id="briefing-unlocks"></div>
                 <small id="briefing-runbook"></small>
@@ -499,10 +527,14 @@ const phaseBriefingService = document.querySelector<HTMLElement>("#phase-briefin
 const phaseBriefingIndex = document.querySelector<HTMLElement>("#phase-briefing-index")!;
 const phaseBriefingAssignment = document.querySelector<HTMLElement>("#phase-briefing-assignment")!;
 const phaseBriefingLesson = document.querySelector<HTMLElement>("#phase-briefing-lesson")!;
+const briefingAssignmentLabel = document.querySelector<HTMLElement>("#briefing-assignment-label")!;
+const briefingContext = document.querySelector<HTMLElement>("#briefing-context")!;
+const briefingToolboxLabel = document.querySelector<HTMLElement>("#briefing-toolbox-label")!;
 const briefingTargetRps = document.querySelector<HTMLElement>("#briefing-target-rps")!;
 const briefingTargetLatency = document.querySelector<HTMLElement>("#briefing-target-latency")!;
 const briefingTargetErrors = document.querySelector<HTMLElement>("#briefing-target-errors")!;
 const briefingTargetBudget = document.querySelector<HTMLElement>("#briefing-target-budget")!;
+const briefingBudgetLabel = document.querySelector<HTMLElement>("#briefing-budget-label")!;
 const briefingUnlocks = document.querySelector<HTMLElement>("#briefing-unlocks")!;
 const briefingRunbook = document.querySelector<HTMLElement>("#briefing-runbook")!;
 const briefingIncidentCode = document.querySelector<HTMLElement>("#briefing-incident-code")!;
@@ -553,7 +585,7 @@ for (const kind of componentOrder) {
       <img id="part-preview-${kind}" alt="" />
       <span class="part-code">${componentOrder.indexOf(kind) + 1} · ${definition.shortLabel}</span>
     </span>
-    <span class="part-name">${definition.label}</span>
+    <span class="part-name">${contextualComponentLabel(kind)}</span>
     <span class="part-cost">$${definition.cost} · ${definition.role}</span>
   `;
   partsList.append(button);
@@ -843,18 +875,25 @@ function renderPhaseBriefing() {
   phaseBriefingService.textContent = currentPhase.service;
   phaseBriefingService.setAttribute("aria-label", `You are building ${currentPhase.service}`);
   phaseBriefingIndex.textContent = `${phaseNumber} / ${String(campaignPhases.length).padStart(2, "0")}`;
+  briefingAssignmentLabel.textContent = currentPhaseIndex === 1 ? "Investigate this" : "Build this";
   phaseBriefingAssignment.textContent = currentPhase.objective;
   phaseBriefingLesson.textContent = currentPhaseIndex === 0
     ? `${currentPhase.description} Choose a part, then place it on any free floor tile—connections are automatic.`
-    : `${currentPhase.description} There is no prescribed topology: use the targets, component specs, and budget to design your solution.`;
+    : currentPhaseIndex === 1
+      ? `${currentPhase.description} Inspect the inherited path and its p95 latency. You may change the architecture or scale the dependency; any design that meets the SLO is valid.`
+      : `${currentPhase.description} There is no prescribed topology: use the targets, component specs, and budget to design your solution.`;
+  briefingContext.hidden = currentPhaseIndex !== 1;
+  briefingToolboxLabel.textContent = currentPhaseIndex === 1 ? "Inherited + available parts" : "Available parts";
   briefingTargetRps.textContent = `${currentPhase.targetRps.toLocaleString("en-US")} r/s`;
   briefingTargetLatency.textContent = `p95 ≤ ${currentPhase.latencySlo} ms`;
   briefingTargetErrors.textContent = `< ${currentPhase.errorSlo.toFixed(1)}%`;
-  briefingTargetBudget.textContent = `$${currentPhase.budget.toLocaleString("en-US")}`;
+  briefingBudgetLabel.textContent = currentPhaseIndex === 1 ? "Remaining" : "Budget";
+  briefingTargetBudget.textContent = `$${(currentPhaseIndex === 1 ? 360 : currentPhase.budget).toLocaleString("en-US")}`;
   briefingUnlocks.innerHTML = currentPhase.unlocks.map((kind) => {
     const definition = componentDefinitions[kind];
     const preview = brandPreviewData.get(kind) ?? document.querySelector<HTMLImageElement>(`#part-preview-${kind}`)?.src ?? "";
-    return `<span style="--briefing-component:${definition.cssColor}"><img src="${preview}" alt="" /><em>${definition.label}</em></span>`;
+    const inheritedState = currentPhaseIndex === 1 ? (kind === "queue" ? "Available" : "Installed") : "";
+    return `<span style="--briefing-component:${definition.cssColor}" data-inherited="${inheritedState === "Installed"}"><img src="${preview}" alt="" /><em>${contextualComponentLabel(kind)}</em>${inheritedState ? `<i>${inheritedState}</i>` : ""}</span>`;
   }).join("");
   const runbookNames = currentPhase.configUnlocks
     .map((id) => configDefinitions.find((config) => config.id === id)?.label)
@@ -868,7 +907,10 @@ function renderPhaseBriefing() {
   briefingIncidentSummary.textContent = currentPhase.incident.summary;
   dismissBriefingButton.querySelector("span")!.textContent = currentPhaseIndex === 0
     ? "Guided phase · next actions stay pinned top-right"
-    : "Independent phase · diagnose the system yourself";
+    : currentPhaseIndex === 1
+      ? "Inherited system · diagnose cause before changing it"
+      : "Independent phase · diagnose the system yourself";
+  dismissBriefingButton.querySelector("b")!.textContent = currentPhaseIndex === 1 ? "Inspect inherited system →" : "Start building →";
 }
 
 function showPhaseBriefing() {
@@ -884,7 +926,9 @@ function dismissPhaseBriefing() {
   phaseBriefingOverlay.setAttribute("aria-hidden", "true");
   missionCard.dataset.briefing = "false";
   window.setTimeout(() => missionCard.focus({ preventScroll: true }), 320);
-  showToast(`Build mode ready. Design for ${targetRps.toLocaleString("en-US")} r/s, then start the production drill.`);
+  showToast(currentPhaseIndex === 1
+    ? "Inherited system loaded. Trace the blocking analytics call and compare valid fixes."
+    : `Build mode ready. Design for ${targetRps.toLocaleString("en-US")} r/s, then start the production drill.`);
 }
 
 function setPhaseParameters(index: number) {
@@ -923,6 +967,7 @@ function beginCampaignPhase(index: number) {
   activeConfigs.clear();
   pendingConfigs.clear();
   setPhaseParameters(index);
+  loadInheritedScenario(index);
   incidentTriggered = false;
   incidentMode = "pending";
   incidentTargetNodeId = null;
@@ -932,6 +977,23 @@ function beginCampaignPhase(index: number) {
   updateUi();
   updateTelemetry();
   showPhaseBriefing();
+}
+
+function loadInheritedScenario(index: number) {
+  if (index !== 1) return;
+  const inherited: Array<[ComponentKind, GridPosition]> = [
+    ["loadBalancer", { col: 1, row: 3 }],
+    ["loadBalancer", { col: 1, row: 5 }],
+    ["api", { col: 3, row: 2 }],
+    ["api", { col: 3, row: 3 }],
+    ["api", { col: 3, row: 4 }],
+    ["api", { col: 3, row: 5 }],
+    ["redis", { col: 5, row: 2 }],
+    ["worker", { col: 5, row: 5 }],
+    ["postgres", { col: 7, row: 3 }],
+  ];
+  for (const [kind, grid] of inherited) placeComponent(kind, grid, true);
+  selectNode(null);
 }
 
 function renderConfigPanel() {
@@ -1908,7 +1970,7 @@ function remainingBudget() {
   return totalBudget + incidentBudgetCredit - installedMachineSpend() - configSpend();
 }
 
-function placeComponent(kind: ComponentKind, grid: GridPosition) {
+function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false) {
   const definition = componentDefinitions[kind];
   if (isOccupied(grid)) {
     showToast("That floor tile is already occupied.");
@@ -1934,7 +1996,7 @@ function placeComponent(kind: ComponentKind, grid: GridPosition) {
 
   const label = document.createElement("div");
   label.className = "component-label";
-  label.innerHTML = `${definition.label}<small>${definition.role}</small>`;
+  label.innerHTML = `${contextualComponentLabel(kind)}<small>${contextualComponentRole(kind)}</small>`;
   document.querySelector(".game-shell")!.append(label);
 
   const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, state: "healthy" };
@@ -1943,8 +2005,10 @@ function placeComponent(kind: ComponentKind, grid: GridPosition) {
   checkTopologyIncidentResponse();
   updateUi();
   updateTelemetry();
-  selectNode(node);
-  showToast(`${definition.label} installed — ${definition.role.toLowerCase()}.`);
+  if (!silent) {
+    selectNode(node);
+    showToast(`${contextualComponentLabel(kind)} installed — ${contextualComponentRole(kind).toLowerCase()}.`);
+  }
   return true;
 }
 
@@ -1962,11 +2026,17 @@ function selectNode(node: PlacedComponent | null) {
     return;
   }
   const definition = componentDefinitions[node.kind];
-  selectedName.textContent = definition.label;
-  selectedRole.textContent = definition.role;
-  selectedDescription.textContent = definition.description;
+  selectedName.textContent = contextualComponentLabel(node.kind);
+  selectedRole.textContent = contextualComponentRole(node.kind);
+  selectedDescription.textContent = node.kind === "worker" && currentPhase.workload === "analytics"
+    ? "Records click events for product analytics. Without a Message Queue, each API request waits for this service before it can respond."
+    : definition.description;
   selectedCapacity.textContent = definition.capacityText;
-  selectedEffect.textContent = definition.effectText;
+  selectedEffect.textContent = node.kind === "worker" && currentPhase.workload === "analytics"
+    ? nodes.some((candidate) => candidate.kind === "queue")
+      ? "Consumes analytics outside the request path"
+      : "Blocks API responses until click tracking finishes"
+    : definition.effectText;
   selectedState.textContent = node.state === "healthy" ? "Healthy" : node.state === "degraded" ? "Recovering" : "Failed";
   selectedState.dataset.state = node.state;
   selectedCard.dataset.visible = "true";
@@ -2307,10 +2377,14 @@ function rebuildConnections() {
     ? "MEDIA JOB"
     : currentPhase.workload === "dispatch"
       ? "LOCATION EVENT"
-      : "ANALYTICS EVENT";
+      : "ASYNC EVENT · NON-BLOCKING";
   const asyncEvent = connect(primaryApi, queue, asyncEventLabel);
   for (const [index, worker] of workers.entries()) {
-    const queueToWorker = connect(queue, worker, index === 0 ? "CONSUME JOB" : null);
+    const synchronousAnalytics = currentPhase.workload === "analytics" && !queue;
+    const apiToWorker = synchronousAnalytics
+      ? connect(apiNodes[index % Math.max(1, apiNodes.length)], worker, index === 0 ? "SYNC CALL · BLOCKING" : null)
+      : null;
+    const queueToWorker = synchronousAnalytics ? null : connect(queue, worker, index === 0 ? "CONSUME JOB" : null);
     const workerCommit = connect(
       worker,
       currentPhase.workload === "streaming"
@@ -2318,7 +2392,8 @@ function rebuildConnections() {
         : postgresNodes[index % Math.max(1, postgresNodes.length)],
       index === 0 ? (currentPhase.workload === "streaming" ? "WRITE MEDIA" : "ASYNC COMMIT") : null,
     );
-    const asyncRoute = [primaryApi ? ingressByApi.get(primaryApi) ?? null : null, asyncEvent, queueToWorker, workerCommit].filter(
+    const sourceApi = apiNodes[index % Math.max(1, apiNodes.length)];
+    const asyncRoute = [sourceApi ? ingressByApi.get(sourceApi) ?? null : null, apiToWorker ?? asyncEvent, queueToWorker, workerCommit].filter(
       (connection): connection is Connection => connection !== null,
     );
     if (asyncRoute.length > 1) trafficRoutes.push(asyncRoute);
@@ -2396,9 +2471,15 @@ function calculateMetrics(demand = targetRps) {
       : currentPhase.workload === "dispatch"
         ? 0.42
         : 0;
-  const asyncUserCapacity = backgroundFraction > 0
-    ? Math.min(queueCapacity, workerCapacity) / backgroundFraction
-    : Number.POSITIVE_INFINITY;
+  const hasQueue = effectiveCounts.queue >= 0.5;
+  const hasWorker = effectiveCounts.worker >= 0.5;
+  const asyncUserCapacity = backgroundFraction === 0
+    ? Number.POSITIVE_INFINITY
+    : !hasWorker
+      ? 0
+      : hasQueue
+        ? Math.min(queueCapacity, workerCapacity) / backgroundFraction
+        : workerCapacity / backgroundFraction;
   const edgeOriginFraction = usesMediaPipeline && effectiveCounts.cdn > 0
     ? Math.max(0.34, 1 - effectiveCounts.cdn * 0.22)
     : 1;
@@ -2419,9 +2500,12 @@ function calculateMetrics(demand = targetRps) {
   const capacity = Math.min(originCapacity, asyncUserCapacity, geoUserCapacity, mediaStorageUserCapacity, mediaDeliveryUserCapacity);
   const utilization = demand / Math.max(1, capacity);
   const baseLatency = cacheOperational ? 72 : 145;
-  const asyncPipelineOperational = backgroundFraction === 0 || asyncUserCapacity >= demand;
+  const asyncPipelineOperational = backgroundFraction === 0 || (hasQueue && hasWorker && asyncUserCapacity >= demand);
   const asyncBenefit = backgroundFraction > 0 && asyncPipelineOperational ? 12 : 0;
-  const asyncPenalty = backgroundFraction > 0 && !asyncPipelineOperational ? 36 : 0;
+  const missingWorkerPenalty = backgroundFraction > 0 && !hasWorker ? 64 : 0;
+  const synchronousAnalyticsPenalty = currentPhase.workload === "analytics" && hasWorker && !hasQueue
+    ? 60 / Math.max(1, effectiveCounts.worker)
+    : 0;
   const geoPenalty = usesGeoIndex && effectiveCounts.geoIndex === 0 ? 95 : 0;
   const geoBenefit = usesGeoIndex && effectiveCounts.geoIndex > 0 ? 20 : 0;
   const objectStoragePenalty = usesMediaPipeline && effectiveCounts.objectStorage === 0 ? 82 : 0;
@@ -2436,7 +2520,8 @@ function calculateMetrics(demand = targetRps) {
   const latency = Math.round(Math.max(
     30,
     baseLatency
-      + asyncPenalty
+      + missingWorkerPenalty
+      + synchronousAnalyticsPenalty
       + geoPenalty
       + objectStoragePenalty
       - asyncBenefit
@@ -2500,10 +2585,15 @@ function calculateMetrics(demand = targetRps) {
         : "Playback traffic is reaching the origin without a regional delivery edge.";
     }
   } else if (latency > latencySlo) {
-    bottleneckKind = effectiveCounts.redis === 0 ? "redis" : bottleneckKind;
-    diagnosis = effectiveCounts.redis === 0
-      ? `Disk-backed reads push p95 over the ${latencySlo} ms latency SLO.`
-      : "The service is overloaded enough to create a latency queue.";
+    if (currentPhase.workload === "analytics" && hasWorker && !hasQueue) {
+      bottleneckKind = "queue";
+      diagnosis = `The API waits for Analytics Service before responding. The synchronous call adds ${Math.round(synchronousAnalyticsPenalty)} ms at p95.`;
+    } else {
+      bottleneckKind = effectiveCounts.redis === 0 ? "redis" : bottleneckKind;
+      diagnosis = effectiveCounts.redis === 0
+        ? `Disk-backed reads push p95 over the ${latencySlo} ms latency SLO.`
+        : "The service is overloaded enough to create a latency queue.";
+    }
   } else if (backgroundFraction > 0 && counts.queue === 0 && currentPhase.unlocks.includes("queue")) {
     bottleneckKind = "queue";
     diagnosis = "The redirect path is healthy, but analytics work still shares the synchronous request path.";
@@ -2546,6 +2636,24 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
         description = "Watch the telemetry and topology. The failure drill will begin automatically.";
         state = "live";
       }
+    } else if (currentPhaseIndex === 1 && metrics.hasCore) {
+      const analyticsWorkers = metrics.counts.worker;
+      const hasAsyncQueue = metrics.counts.queue > 0;
+      if (hasAsyncQueue && metrics.latency <= latencySlo) {
+        stage = "Guided diagnosis · Compare the new path";
+        title = "Analytics no longer blocks redirects";
+        description = "The API publishes an event and responds immediately; Analytics Service consumes it later. Notice the NON-BLOCKING route and lower p95.";
+        state = "ready";
+      } else if (!hasAsyncQueue && analyticsWorkers >= 2 && metrics.latency <= latencySlo) {
+        stage = "Guided diagnosis · Valid alternative";
+        title = "More analytics capacity meets the SLO";
+        description = "A second Analytics Service reduced queueing delay. This passes, but redirects still depend on analytics availability and use more compute than decoupling.";
+        state = "ready";
+      } else {
+        stage = "Guided diagnosis · Inspect the inherited path";
+        title = `Why is p95 ${metrics.latency} ms?`;
+        description = "Follow SYNC CALL · BLOCKING: every API response waits for Analytics Service. You can change that boundary or provision the dependency differently.";
+      }
     } else if (!metrics.hasCore) {
       const missing = (["loadBalancer", "api", "postgres"] as ComponentKind[])
         .filter((kind) => metrics.counts[kind] === 0)
@@ -2560,7 +2668,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
           : metrics.bottleneckKind === "postgres"
             ? "Storage"
             : metrics.bottleneckKind
-              ? componentDefinitions[metrics.bottleneckKind].label
+              ? contextualComponentLabel(metrics.bottleneckKind)
               : "System";
       title = `${tierName} is the bottleneck`;
       description = `${metrics.capacity.toLocaleString("en-US")} / ${targetRps.toLocaleString("en-US")} r/s · p95 ${metrics.latency} / ${latencySlo} ms. Inspect the hot path and component effects.`;
@@ -2667,10 +2775,12 @@ function updateUi() {
     const locked = !currentPhase.unlocks.includes(kind);
     button.dataset.locked = String(locked);
     button.disabled = locked || componentDefinitions[kind].cost > remaining;
+    const name = button.querySelector<HTMLElement>(".part-name");
+    if (name) name.textContent = contextualComponentLabel(kind);
     const cost = button.querySelector<HTMLElement>(".part-cost");
     if (cost) cost.textContent = locked
       ? `Unlocks in phase ${campaignPhases.findIndex((phase) => phase.unlocks.includes(kind)) + 1}`
-      : `$${componentDefinitions[kind].cost} · ${componentDefinitions[kind].role}`;
+      : `$${componentDefinitions[kind].cost} · ${contextualComponentRole(kind)}`;
   });
   configCount.textContent = `${activeConfigs.size} config${activeConfigs.size === 1 ? "" : "s"}`;
 }
@@ -2703,7 +2813,7 @@ function updateTelemetry() {
   bottleneckElement.dataset.state = metrics.bottleneckKind === null ? "healthy" : "warning";
   for (const node of nodes) {
     node.label.dataset.status = node.state === "failed" ? "failed" : node.state === "degraded" ? "degraded" : node.kind === metrics.bottleneckKind ? "hot" : "normal";
-    const stateLabel = node.state === "failed" ? "OFFLINE" : node.state === "degraded" ? "RECOVERING" : componentDefinitions[node.kind].role;
+    const stateLabel = node.state === "failed" ? "OFFLINE" : node.state === "degraded" ? "RECOVERING" : contextualComponentRole(node.kind);
     node.label.querySelector("small")!.textContent = stateLabel;
   }
   document.querySelectorAll<HTMLButtonElement>(".part-card").forEach((button) => {
@@ -2712,13 +2822,18 @@ function updateTelemetry() {
       : currentPhaseIndex === 0
         ? metrics.bottleneckKind
         : null;
-    button.dataset.recommended = String(button.dataset.kind === recommendedKind && !button.disabled);
+    const learningAlternative = currentPhaseIndex === 1
+      && !isRunning
+      && metrics.counts.queue === 0
+      && metrics.counts.worker < 2
+      && (button.dataset.kind === "queue" || button.dataset.kind === "worker");
+    button.dataset.recommended = String((button.dataset.kind === recommendedKind || learningAlternative) && !button.disabled);
   });
 
   if (testPhase === "idle") {
     missionPhaseElement.textContent = capacityMet && latencyMet
       ? "Ready to test"
-      : currentPhaseIndex === 0
+      : currentPhaseIndex <= 1
         ? "Guided build"
         : "Independent build";
     testPhaseElement.textContent = metrics.hasCore ? "Topology preview" : "Awaiting topology";
@@ -3428,7 +3543,9 @@ function updateLabels() {
     const y = (-projected.y * 0.5 + 0.5) * rect.height;
     connection.annotation.style.left = `${x}px`;
     connection.annotation.style.top = `${y}px`;
-    connection.annotation.dataset.visible = String(isRunning && projected.z < 1);
+    const instructionalRoute = currentPhaseIndex === 1
+      && (connection.label?.includes("BLOCKING") || connection.label?.includes("NON-BLOCKING"));
+    connection.annotation.dataset.visible = String((isRunning || instructionalRoute) && projected.z < 1);
   }
 }
 
@@ -3506,7 +3623,13 @@ if (demoMode !== null) {
     updateTelemetry();
   }
   closeCampaignScreen();
-  if (demoMode === "briefing") {
+  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale") {
+    loadInheritedScenario(1);
+    if (demoMode === "analytics-queue") placeComponent("queue", { col: 5, row: 4 });
+    if (demoMode === "analytics-scale") placeComponent("worker", { col: 7, row: 5 });
+    updateUi();
+    updateTelemetry();
+  } else if (demoMode === "briefing") {
     showPhaseBriefing();
   } else if (demoMode !== "empty") {
     placeComponent("loadBalancer", { col: 1, row: 3 });

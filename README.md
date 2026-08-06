@@ -2,6 +2,8 @@
 
 A browser-based systems engineering campaign. Build production topologies in a tactile retro-isometric lab, configure resilience policies, prove service-level objectives, and operate the system through live failure drills.
 
+The long-term mechanics direction is documented in [GAME_DESIGN.md](./GAME_DESIGN.md): a composable graph simulation where scenarios define contracts rather than hidden component recipes.
+
 ## Run locally
 
 ```bash
@@ -16,7 +18,7 @@ Then open the local URL printed by Vite.
 Eight phases escalate from a first URL-shortener release to product-scale architecture exercises. Every phase changes the budget, component unlocks, traffic target, latency/error SLO, certification window, and production incident:
 
 1. First Release — build and operate a URL shortener
-2. Growth Loop — isolate social-link analytics with a queue and worker
+2. Growth Loop — diagnose and redesign a blocking analytics dependency
 3. On-call Rotation — keep a checkout API alive through a node crash
 4. Regional Scale — protect a realtime workspace from database failure
 5. Planetary Event — operate a global live platform through compound failure
@@ -49,6 +51,8 @@ Use `?demo=packets` to populate the routes with deterministic data frames for
 traffic-visualization checks.
 Use `?demo=incident` to render an active cache-stampede response, or
 `?demo=config&phase=3` to open the fully unlocked resilience runbook.
+Use `?demo=analytics-inherited`, `?demo=analytics-queue`, or
+`?demo=analytics-scale` to compare the Phase 2 bottleneck and two valid designs.
 Add `&angle=1.8` to render a deterministic rotated camera angle.
 
 ## Design references
