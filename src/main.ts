@@ -454,11 +454,36 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <h2 id="result-title">Service certified</h2>
         <p class="result-summary" id="result-summary"></p>
         <div class="result-stats">
-          <span><small>Score</small><strong id="result-score">0</strong></span>
-          <span><small>Budget left</small><strong id="result-budget">$0</strong></span>
-          <span><small>Stable for</small><strong id="result-stability">0.0s</strong></span>
+          <span><small id="result-score-label">Score</small><strong id="result-score">0</strong></span>
+          <span><small id="result-budget-label">Budget left</small><strong id="result-budget">$0</strong></span>
+          <span><small id="result-stability-label">Stable for</small><strong id="result-stability">0.0s</strong></span>
         </div>
         <p class="result-diagnosis" id="result-diagnosis"></p>
+        <section class="result-analysis" id="result-analysis" hidden aria-label="Slow request trace">
+          <div class="result-analysis-heading">
+            <span>Slow request trace</span>
+            <strong id="result-latency-gap">29 ms over target</strong>
+          </div>
+          <div class="result-latency-track" aria-hidden="true">
+            <span></span>
+            <i id="result-latency-slo-marker"></i>
+          </div>
+          <div class="result-trace" aria-label="API Server waits for Analytics Service before responding">
+            <span>API Server</span>
+            <i data-state="blocking"><b>waits</b></i>
+            <span data-state="blocking">Analytics Service</span>
+            <i><b>then</b></i>
+            <span>Response</span>
+          </div>
+        </section>
+        <section class="result-hint" id="result-hint" hidden data-level="0">
+          <div class="result-hint-heading">
+            <span>Design hint</span>
+            <button id="result-hint-button" type="button" aria-expanded="false">Reveal a hint</button>
+          </div>
+          <p id="result-hint-copy" aria-live="polite" hidden></p>
+          <div class="result-hint-progress" aria-hidden="true"><i></i><i></i></div>
+        </section>
         <div class="result-actions">
           <button class="result-button result-button-primary" id="retry-button" type="button">Run again</button>
           <button class="result-button" id="dismiss-result-button" type="button">Keep building</button>
@@ -508,10 +533,19 @@ const resultCard = document.querySelector<HTMLElement>("#result-card")!;
 const resultKicker = document.querySelector<HTMLElement>("#result-kicker")!;
 const resultTitle = document.querySelector<HTMLElement>("#result-title")!;
 const resultSummary = document.querySelector<HTMLElement>("#result-summary")!;
+const resultScoreLabel = document.querySelector<HTMLElement>("#result-score-label")!;
 const resultScore = document.querySelector<HTMLElement>("#result-score")!;
+const resultBudgetLabel = document.querySelector<HTMLElement>("#result-budget-label")!;
 const resultBudget = document.querySelector<HTMLElement>("#result-budget")!;
+const resultStabilityLabel = document.querySelector<HTMLElement>("#result-stability-label")!;
 const resultStability = document.querySelector<HTMLElement>("#result-stability")!;
 const resultDiagnosis = document.querySelector<HTMLElement>("#result-diagnosis")!;
+const resultAnalysis = document.querySelector<HTMLElement>("#result-analysis")!;
+const resultLatencyGap = document.querySelector<HTMLElement>("#result-latency-gap")!;
+const resultLatencySloMarker = document.querySelector<HTMLElement>("#result-latency-slo-marker")!;
+const resultHint = document.querySelector<HTMLElement>("#result-hint")!;
+const resultHintButton = document.querySelector<HTMLButtonElement>("#result-hint-button")!;
+const resultHintCopy = document.querySelector<HTMLElement>("#result-hint-copy")!;
 const retryButton = document.querySelector<HTMLButtonElement>("#retry-button")!;
 const dismissResultButton = document.querySelector<HTMLButtonElement>("#dismiss-result-button")!;
 const rotateLeftButton = document.querySelector<HTMLButtonElement>("#rotate-left-button")!;
@@ -3020,6 +3054,26 @@ function hideResult() {
   resultOverlay.setAttribute("aria-hidden", "true");
 }
 
+let resultHintLevel = 0;
+
+function renderResultHint(level: number) {
+  resultHintLevel = Math.max(0, Math.min(2, level));
+  resultHint.dataset.level = String(resultHintLevel);
+  resultHintButton.setAttribute("aria-expanded", String(resultHintLevel > 0));
+  resultHintCopy.hidden = resultHintLevel === 0;
+  if (resultHintLevel === 0) {
+    resultHintCopy.textContent = "";
+    resultHintButton.textContent = "Reveal a hint";
+  } else if (resultHintLevel === 1) {
+    resultHintCopy.textContent = "Ask which work must finish before the user can receive the redirect response. Click tracking may have a different deadline.";
+    resultHintButton.textContent = "Show a deeper hint";
+  } else {
+    resultHintCopy.textContent = "Look for a boundary that can accept click events quickly while Analytics Service processes them later, outside the user-facing request path.";
+    resultHintButton.textContent = "Hints complete";
+  }
+  resultHintButton.disabled = resultHintLevel >= 2;
+}
+
 function finishTest(passed: boolean) {
   isRunning = false;
   testPhase = passed ? "passed" : "failed";
@@ -3032,6 +3086,11 @@ function finishTest(passed: boolean) {
     : Math.max(0, Math.round(metrics.capacity * 0.45 + Math.max(0, 110 - metrics.latency) * 2));
   const grade = score >= 1400 ? "S" : score >= 1250 ? "A" : score >= 1080 ? "B" : "C";
   const isFinalPhase = currentPhaseIndex === campaignPhases.length - 1;
+  const blockingAnalyticsFailure = !passed
+    && currentPhase.workload === "analytics"
+    && metrics.hasCore
+    && metrics.counts.worker > 0
+    && metrics.counts.queue === 0;
   if (passed) {
     const previousBest = Number(window.localStorage.getItem(`sysbench-best-${currentPhaseIndex}`) ?? 0);
     if (score > previousBest) window.localStorage.setItem(`sysbench-best-${currentPhaseIndex}`, String(score));
@@ -3042,13 +3101,26 @@ function finishTest(passed: boolean) {
   resultCard.dataset.outcome = passed ? "passed" : "failed";
   resultKicker.textContent = passed ? `Phase ${currentPhaseIndex + 1} certified · Grade ${grade}` : `Phase ${currentPhaseIndex + 1} · Needs work`;
   resultTitle.textContent = passed ? (isFinalPhase ? "Staff simulation complete" : "Service survived production") : "Production drill failed";
-  resultSummary.textContent = passed
+  resultSummary.textContent = blockingAnalyticsFailure
+    ? `Redirect throughput is healthy, but p95 missed its target by ${Math.max(0, metrics.latency - latencySlo)} ms because click tracking sits inside every user request.`
+    : passed
     ? `${currentPhase.service} sustained ${targetRps.toLocaleString("en-US")} requests per second, recovered from ${currentPhase.incident.title.toLowerCase()}, and returned inside its SLO.`
     : `The design could not recover and hold all production targets before the ${testTimeLimit}-second incident window closed.`;
-  resultScore.textContent = score.toLocaleString("en-US");
-  resultBudget.textContent = `$${remainingBudget().toLocaleString("en-US")}`;
-  resultStability.textContent = `${stableElapsed.toFixed(1)}s`;
+  resultScoreLabel.textContent = blockingAnalyticsFailure ? "Observed p95" : "Score";
+  resultScore.textContent = blockingAnalyticsFailure ? `${metrics.latency} ms` : score.toLocaleString("en-US");
+  resultBudgetLabel.textContent = blockingAnalyticsFailure ? "Target p95" : "Budget left";
+  resultBudget.textContent = blockingAnalyticsFailure ? `≤ ${latencySlo} ms` : `$${remainingBudget().toLocaleString("en-US")}`;
+  resultStabilityLabel.textContent = blockingAnalyticsFailure ? "Budget left" : "Stable for";
+  resultStability.textContent = blockingAnalyticsFailure ? `$${remainingBudget().toLocaleString("en-US")}` : `${stableElapsed.toFixed(1)}s`;
   resultDiagnosis.textContent = metrics.diagnosis;
+  resultAnalysis.hidden = !blockingAnalyticsFailure;
+  resultHint.hidden = !blockingAnalyticsFailure;
+  if (blockingAnalyticsFailure) {
+    const latencyGap = Math.max(0, metrics.latency - latencySlo);
+    resultLatencyGap.textContent = `${latencyGap} ms over target`;
+    resultLatencySloMarker.style.left = `${Math.min(92, (latencySlo / Math.max(1, metrics.latency)) * 100)}%`;
+  }
+  renderResultHint(0);
   retryButton.textContent = passed ? (isFinalPhase ? "Review campaign" : "Escalate to next phase") : "Retry production drill";
   dismissResultButton.textContent = passed ? "Review this topology" : "Return to build mode";
   resultOverlay.dataset.visible = "true";
@@ -3515,6 +3587,7 @@ retryButton.addEventListener("click", () => {
   }
   beginCampaignPhase(currentPhaseIndex + 1);
 });
+resultHintButton.addEventListener("click", () => renderResultHint(resultHintLevel + 1));
 dismissResultButton.addEventListener("click", () => {
   hideResult();
   testPhase = "idle";
@@ -3623,12 +3696,13 @@ if (demoMode !== null) {
     updateTelemetry();
   }
   closeCampaignScreen();
-  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale") {
+  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-failed") {
     loadInheritedScenario(1);
     if (demoMode === "analytics-queue") placeComponent("queue", { col: 5, row: 4 });
     if (demoMode === "analytics-scale") placeComponent("worker", { col: 7, row: 5 });
     updateUi();
     updateTelemetry();
+    if (demoMode === "analytics-failed") finishTest(false);
   } else if (demoMode === "briefing") {
     showPhaseBriefing();
   } else if (demoMode !== "empty") {

@@ -51,8 +51,9 @@ Use `?demo=packets` to populate the routes with deterministic data frames for
 traffic-visualization checks.
 Use `?demo=incident` to render an active cache-stampede response, or
 `?demo=config&phase=3` to open the fully unlocked resilience runbook.
-Use `?demo=analytics-inherited`, `?demo=analytics-queue`, or
-`?demo=analytics-scale` to compare the Phase 2 bottleneck and two valid designs.
+Use `?demo=analytics-inherited`, `?demo=analytics-failed`,
+`?demo=analytics-queue`, or `?demo=analytics-scale` to compare the Phase 2
+bottleneck, its diagnostic result, and two valid designs.
 Add `&angle=1.8` to render a deterministic rotated camera angle.
 
 ## Design references
