@@ -42,14 +42,25 @@ type PlacedComponent = {
 };
 
 type Connection = {
+  specId: number | null;
   from: PlacedComponent;
   to: PlacedComponent;
   mode: SimulationEdgeMode;
+  tube: THREE.Mesh;
+  hitTube: THREE.Mesh;
   curve: THREE.CatmullRomCurve3;
   material: THREE.MeshStandardMaterial;
   annotation: HTMLDivElement | null;
   label: string | null;
   activity: number;
+};
+
+type AuthoredConnection = {
+  id: number;
+  fromId: number;
+  toId: number;
+  mode: SimulationEdgeMode;
+  label: string | null;
 };
 
 type Packet = {
@@ -384,7 +395,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <span class="budget" id="budget">$1,200</span>
       </div>
       <div class="parts-list" id="parts-list"></div>
-      <p class="parts-hint"><b>Click a part, then click a free floor tile.</b> Cables connect automatically. Drag machines to move them.</p>
+      <p class="parts-hint" id="parts-hint"><b>Click a part, then click a free floor tile.</b> Cables connect automatically. Drag machines to move them.</p>
     </section>
 
     <section class="telemetry-panel" aria-labelledby="telemetry-title">
@@ -434,10 +445,19 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </div>
     </section>
 
-    <div class="view-controls" aria-label="View controls">
+    <div class="view-controls" id="view-controls" data-wiring="false" aria-label="View controls">
       <button id="rotate-left-button" type="button" aria-label="Rotate view counter-clockwise">↶</button>
       <span><b>Drag to rotate</b><small>Empty floor · Q / E</small></span>
       <button id="rotate-right-button" type="button" aria-label="Rotate view clockwise">↷</button>
+      <button class="wiring-button" id="wiring-button" type="button" data-mode="automatic" data-editing="false" aria-pressed="false" disabled hidden>
+        <b id="wiring-button-label">Auto cables</b><small>Unlocks phase 02</small>
+      </button>
+    </div>
+
+    <div class="wiring-guide" id="wiring-guide" data-visible="false" aria-hidden="true" aria-live="polite">
+      <span id="wiring-guide-step">Select a source machine</span>
+      <strong id="wiring-guide-detail">Then select its destination · click a cable to remove</strong>
+      <button id="restore-auto-button" type="button">Restore auto-route</button>
     </div>
 
     <div class="toast" id="toast" data-visible="false" role="status"></div>
@@ -513,6 +533,7 @@ reducedMotionQuery.addEventListener("change", (event) => {
   canvas.dataset.reducedMotion = String(prefersReducedMotion);
 });
 const partsList = document.querySelector<HTMLDivElement>("#parts-list")!;
+const partsHint = document.querySelector<HTMLElement>("#parts-hint")!;
 const budgetElement = document.querySelector<HTMLSpanElement>("#budget")!;
 const runButton = document.querySelector<HTMLButtonElement>("#run-button")!;
 const statusLight = document.querySelector<HTMLSpanElement>("#status-light")!;
@@ -570,6 +591,13 @@ const retryButton = document.querySelector<HTMLButtonElement>("#retry-button")!;
 const dismissResultButton = document.querySelector<HTMLButtonElement>("#dismiss-result-button")!;
 const rotateLeftButton = document.querySelector<HTMLButtonElement>("#rotate-left-button")!;
 const rotateRightButton = document.querySelector<HTMLButtonElement>("#rotate-right-button")!;
+const viewControls = document.querySelector<HTMLElement>("#view-controls")!;
+const wiringButton = document.querySelector<HTMLButtonElement>("#wiring-button")!;
+const wiringButtonLabel = document.querySelector<HTMLElement>("#wiring-button-label")!;
+const wiringGuide = document.querySelector<HTMLElement>("#wiring-guide")!;
+const wiringGuideStep = document.querySelector<HTMLElement>("#wiring-guide-step")!;
+const wiringGuideDetail = document.querySelector<HTMLElement>("#wiring-guide-detail")!;
+const restoreAutoButton = document.querySelector<HTMLButtonElement>("#restore-auto-button")!;
 const brandMark = document.querySelector<HTMLButtonElement>("#brand-mark")!;
 const brandItemPrimary = document.querySelector<HTMLImageElement>("#brand-item-primary")!;
 const brandItemSecondary = document.querySelector<HTMLImageElement>("#brand-item-secondary")!;
@@ -879,9 +907,15 @@ const pointer = new THREE.Vector2();
 const clock = new THREE.Clock();
 const nodes: PlacedComponent[] = [];
 const connections: Connection[] = [];
+const authoredConnections: AuthoredConnection[] = [];
 const packets: Packet[] = [];
 const trafficRoutes: Connection[][] = [];
 let nextNodeId = 1;
+let nextConnectionId = 1;
+let topologyMode: "automatic" | "manual" = "automatic";
+let wiringEditing = false;
+let wiringSource: PlacedComponent | null = null;
+let hoveredConnection: Connection | null = null;
 let activeKind: ComponentKind | null = null;
 let draggedPaletteKind: ComponentKind | null = null;
 let draggedNode: PlacedComponent | null = null;
@@ -1042,6 +1076,7 @@ function setPhaseParameters(index: number) {
   certificationDuration = currentPhase.certificationSeconds;
   testTimeLimit = currentPhase.testTimeLimit;
   incidentBudgetCredit = 0;
+  syncWiringUi();
 }
 
 function openCampaignScreen() {
@@ -1064,6 +1099,7 @@ function beginCampaignPhase(index: number) {
   if (index > unlockedPhaseIndex) return;
   stopTest(true);
   hideResult();
+  resetTopologyEditor();
   clearLaboratory();
   activeConfigs.clear();
   pendingConfigs.clear();
@@ -2107,6 +2143,21 @@ function getNodeAtPointer(event: PointerEvent): PlacedComponent | null {
   return nodes.find((node) => node.id === object?.userData.nodeId) ?? null;
 }
 
+function getConnectionAtPointer(event: PointerEvent): Connection | null {
+  if (connections.length === 0) return null;
+  updatePointer(event);
+  const hits = raycaster.intersectObjects(connections.map((connection) => connection.hitTube), false);
+  for (const hit of hits) {
+    const connection = connections.find((candidate) => candidate.hitTube === hit.object);
+    if (!connection) continue;
+    const start = connection.from.group.position.clone().setY(0.49);
+    const end = connection.to.group.position.clone().setY(0.49);
+    if (hit.point.distanceTo(start) < 0.42 || hit.point.distanceTo(end) < 0.42) continue;
+    return connection;
+  }
+  return null;
+}
+
 function isOccupied(grid: GridPosition, exceptNode?: PlacedComponent) {
   return nodes.some(
     (node) => node !== exceptNode && node.grid.col === grid.col && node.grid.row === grid.row,
@@ -2154,7 +2205,9 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
   updateTelemetry();
   if (!silent) {
     selectNode(node);
-    showToast(`${contextualComponentLabel(kind)} installed — ${contextualComponentRole(kind).toLowerCase()}.`);
+    showToast(topologyMode === "manual"
+      ? `${contextualComponentLabel(kind)} installed but disconnected. Press W to cable its ports.`
+      : `${contextualComponentLabel(kind)} installed — ${contextualComponentRole(kind).toLowerCase()}.`);
   }
   return true;
 }
@@ -2291,6 +2344,10 @@ function removeNode(node: PlacedComponent) {
   if (index < 0) return;
   const definition = componentDefinitions[node.kind];
   nodes.splice(index, 1);
+  for (let connectionIndex = authoredConnections.length - 1; connectionIndex >= 0; connectionIndex -= 1) {
+    const authored = authoredConnections[connectionIndex];
+    if (authored.fromId === node.id || authored.toId === node.id) authoredConnections.splice(connectionIndex, 1);
+  }
   machinesGroup.remove(node.group);
   node.group.traverse((object) => {
     if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
@@ -2322,11 +2379,18 @@ function clearLaboratory() {
     });
   }
   nodes.length = 0;
+  authoredConnections.length = 0;
   nextNodeId = 1;
   rebuildConnections();
 }
 
 function setActiveKind(kind: ComponentKind | null) {
+  if (kind && wiringEditing) {
+    wiringEditing = false;
+    wiringSource = null;
+    hoveredConnection = null;
+    syncWiringUi();
+  }
   activeKind = kind;
   canvas.dataset.mode = kind ? "placing" : "idle";
   document.querySelectorAll<HTMLButtonElement>(".part-card").forEach((button) => {
@@ -2413,6 +2477,7 @@ function connect(
   to: PlacedComponent | undefined,
   label: string | null = null,
   mode: SimulationEdgeMode = "request",
+  specId: number | null = null,
 ) {
   if (!from || !to) return null;
   const start = from.group.position.clone().setY(0.49);
@@ -2435,6 +2500,29 @@ function connect(
   );
   tube.receiveShadow = true;
   connectionsGroup.add(tube);
+  const hitTube = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 22, 0.14, 5, false),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      colorWrite: false,
+    }),
+  );
+  connectionsGroup.add(hitTube);
+  const arrowMaterial = material(0x62b9d2, {
+    emissive: 0x16445d,
+    emissiveIntensity: 0.65,
+    roughness: 0.4,
+    metalness: 0.32,
+  });
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.17, 4), arrowMaterial);
+  const arrowPosition = curve.getPointAt(0.64);
+  const arrowDirection = curve.getTangentAt(0.64).normalize();
+  arrow.position.copy(arrowPosition);
+  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), arrowDirection);
+  connectionsGroup.add(arrow);
   let annotation: HTMLDivElement | null = null;
   if (label) {
     annotation = document.createElement("div");
@@ -2445,9 +2533,12 @@ function connect(
     document.querySelector(".game-shell")!.append(annotation);
   }
   const connection: Connection = {
+    specId,
     from,
     to,
     mode,
+    tube,
+    hitTube,
     curve,
     material: cableMaterial,
     annotation,
@@ -2476,6 +2567,16 @@ function rebuildConnections() {
   packets.length = 0;
   trafficRoutes.length = 0;
   nextTrafficRoute = 0;
+
+  if (topologyMode === "manual") {
+    for (const authored of authoredConnections) {
+      const from = nodes.find((node) => node.id === authored.fromId);
+      const to = nodes.find((node) => node.id === authored.toId);
+      const rendered = connect(from, to, authored.label, authored.mode, authored.id);
+      if (rendered) trafficRoutes.push([rendered]);
+    }
+    return;
+  }
 
   const loadBalancers = nodes.filter((node) => node.kind === "loadBalancer");
   const apiNodes = nodes.filter((node) => node.kind === "api");
@@ -2565,6 +2666,166 @@ function rebuildConnections() {
   }
   for (const route of edgeMediaRoutes) if (route.length > 0) trafficRoutes.push(route);
   for (const route of archiveReplicationRoutes) if (route.length > 0) trafficRoutes.push(route);
+}
+
+function captureAutomaticTopology() {
+  authoredConnections.length = 0;
+  for (const connection of connections) {
+    authoredConnections.push({
+      id: nextConnectionId++,
+      fromId: connection.from.id,
+      toId: connection.to.id,
+      mode: connection.mode,
+      label: connection.label,
+    });
+  }
+}
+
+function syncWiringUi() {
+  const available = currentPhaseIndex === 1;
+  viewControls.dataset.wiring = String(available);
+  wiringButton.hidden = !available;
+  wiringButton.disabled = !available;
+  wiringButton.dataset.mode = topologyMode;
+  wiringButton.dataset.editing = String(wiringEditing);
+  wiringButton.setAttribute("aria-pressed", String(topologyMode === "manual" && wiringEditing));
+  const guideVisible = available && topologyMode === "manual" && wiringEditing;
+  wiringGuide.dataset.visible = String(guideVisible);
+  wiringGuide.setAttribute("aria-hidden", String(!guideVisible));
+  const shortcut = wiringButton.querySelector<HTMLElement>("small")!;
+  if (!available) {
+    wiringButtonLabel.textContent = "Auto cables";
+    shortcut.textContent = "Manual in phase 02";
+    partsHint.innerHTML = "<b>Click a part, then click a free floor tile.</b> Cables connect automatically. Drag machines to move them.";
+  } else if (topologyMode === "automatic") {
+    wiringButtonLabel.textContent = "Take cable control";
+    shortcut.textContent = "W · Auto-routed";
+    partsHint.innerHTML = "<b>Place machines anywhere on the floor.</b> Auto-route connects compatible tiers; press W to take cable control.";
+  } else if (wiringEditing) {
+    wiringButtonLabel.textContent = "Finish wiring";
+    shortcut.textContent = "W · Editing live";
+    partsHint.innerHTML = "<b>Select a source machine, then its destination.</b> Click a cable to remove it; incompatible ports are rejected.";
+  } else {
+    wiringButtonLabel.textContent = "Edit cables";
+    shortcut.textContent = "W · Manual graph";
+    partsHint.innerHTML = "<b>Your manual topology is preserved.</b> Press W to edit cables, or restore automatic routing from the wiring guide.";
+  }
+  if (wiringSource) {
+    wiringGuideStep.textContent = `Source · ${contextualComponentLabel(wiringSource.kind)}`;
+    wiringGuideDetail.textContent = "Choose a compatible destination · select empty floor to cancel";
+  } else {
+    wiringGuideStep.textContent = "Select a source machine";
+    wiringGuideDetail.textContent = "Then select its destination · click a cable to remove";
+  }
+}
+
+function resetTopologyEditor() {
+  topologyMode = "automatic";
+  wiringEditing = false;
+  wiringSource = null;
+  hoveredConnection = null;
+  authoredConnections.length = 0;
+  nextConnectionId = 1;
+  syncWiringUi();
+}
+
+function setWiringEditing(active: boolean) {
+  if (currentPhaseIndex !== 1) {
+    showToast("Manual cable routing is available in Phase 02 while its graph simulation is active.");
+    return;
+  }
+  if (active && topologyMode === "automatic") {
+    if (authoredConnections.length === 0) captureAutomaticTopology();
+    topologyMode = "manual";
+    rebuildConnections();
+    updateTelemetry();
+    showToast("Manual topology active. Select a source machine, then its destination.");
+  }
+  wiringEditing = active;
+  wiringSource = null;
+  hoveredConnection = null;
+  setActiveKind(null);
+  selectNode(null);
+  canvas.dataset.mode = active ? "wiring" : "idle";
+  syncWiringUi();
+}
+
+function restoreAutomaticTopology() {
+  if (topologyMode === "automatic") return;
+  topologyMode = "automatic";
+  wiringEditing = false;
+  wiringSource = null;
+  hoveredConnection = null;
+  rebuildConnections();
+  updateUi();
+  updateTelemetry();
+  canvas.dataset.mode = "idle";
+  syncWiringUi();
+  showToast("Automatic routing restored. Your manual graph is preserved until the phase resets.");
+}
+
+function inferAuthoredConnection(from: PlacedComponent, to: PlacedComponent): Pick<AuthoredConnection, "mode" | "label"> | null {
+  const pair = `${from.kind}->${to.kind}`;
+  const asyncEventLabel = currentPhase.workload === "streaming"
+    ? "MEDIA JOB"
+    : currentPhase.workload === "dispatch"
+      ? "LOCATION EVENT"
+      : "ASYNC EVENT · NON-BLOCKING";
+  const rules: Record<string, Pick<AuthoredConnection, "mode" | "label">> = {
+    "loadBalancer->api": { mode: "request", label: "INGRESS REQUEST" },
+    "api->redis": { mode: "request", label: "CACHE LOOKUP" },
+    "api->postgres": { mode: "request", label: "DATABASE READ" },
+    "redis->postgres": { mode: "cache", label: "CACHE FILL" },
+    "api->queue": { mode: "enqueue", label: asyncEventLabel },
+    "queue->worker": { mode: "consume", label: "CONSUME JOB" },
+    "api->worker": { mode: "request", label: "SYNC CALL · BLOCKING" },
+    "worker->postgres": { mode: "commit", label: "ASYNC COMMIT" },
+    "worker->objectStorage": { mode: "commit", label: "WRITE MEDIA" },
+    "geoIndex->postgres": { mode: "request", label: "PROFILE SHARD" },
+    "cdn->loadBalancer": { mode: "request", label: "EDGE REQUEST" },
+    "cdn->objectStorage": { mode: "cache", label: "EDGE MEDIA FILL" },
+    "postgres->postgres": { mode: "replicate", label: "REPLICA STREAM" },
+  };
+  return rules[pair] ?? null;
+}
+
+function addAuthoredConnection(from: PlacedComponent, to: PlacedComponent) {
+  if (from === to) {
+    showToast("A machine cannot cable back into the same port.");
+    return false;
+  }
+  const inferred = inferAuthoredConnection(from, to);
+  if (!inferred) {
+    showToast(`${contextualComponentLabel(from.kind)} has no compatible output for ${contextualComponentLabel(to.kind)}.`);
+    return false;
+  }
+  if (authoredConnections.some((connection) => connection.fromId === from.id && connection.toId === to.id && connection.mode === inferred.mode)) {
+    showToast("That directed connection already exists.");
+    return false;
+  }
+  authoredConnections.push({
+    id: nextConnectionId++,
+    fromId: from.id,
+    toId: to.id,
+    ...inferred,
+  });
+  rebuildConnections();
+  checkTopologyIncidentResponse();
+  updateTelemetry();
+  showToast(`${inferred.label} · ${contextualComponentLabel(from.kind)} → ${contextualComponentLabel(to.kind)} connected.`);
+  return true;
+}
+
+function removeAuthoredConnection(connection: Connection) {
+  if (connection.specId === null) return;
+  const index = authoredConnections.findIndex((authored) => authored.id === connection.specId);
+  if (index < 0) return;
+  const [removed] = authoredConnections.splice(index, 1);
+  const from = nodes.find((node) => node.id === removed.fromId);
+  const to = nodes.find((node) => node.id === removed.toId);
+  rebuildConnections();
+  updateTelemetry();
+  showToast(`${from ? contextualComponentLabel(from.kind) : "Source"} → ${to ? contextualComponentLabel(to.kind) : "destination"} cable removed.`);
 }
 
 function evaluateAnalyticsMetrics(
@@ -3154,6 +3415,13 @@ function checkTopologyIncidentResponse() {
   incidentTaskCount.textContent = `${installedCount} / ${requiredCount} installed`;
   incidentTaskProgress.style.scale = `${Math.min(1, installedCount / Math.max(1, requiredCount))} 1`;
   if (installedCount < requiredCount) return;
+  if (currentPhaseIndex === 1 && topologyMode === "manual" && !calculateMetrics(Math.max(1, currentDemand)).hasCore) {
+    incidentTaskCount.textContent = "Installed · not routed";
+    incidentTaskProgress.style.scale = "0.82 1";
+    incidentTaskTitle.textContent = `Wire ${definition.label} into the live path`;
+    incidentTaskDescription.textContent = "The spare exists but carries no traffic. Connect compatible input and output ports before it can mitigate the incident.";
+    return;
+  }
 
   incidentTask.dataset.complete = "true";
   incidentTaskTitle.textContent = `${definition.label} capacity connected`;
@@ -3538,7 +3806,7 @@ function updatePackets(delta: number) {
 
   for (const connection of connections) {
     connection.activity = Math.max(0, connection.activity - delta * 2.8);
-    connection.material.emissiveIntensity = 0.34 + connection.activity * 1.75;
+    connection.material.emissiveIntensity = 0.34 + connection.activity * 1.75 + (connection === hoveredConnection ? 1.1 : 0);
     connection.annotation?.setAttribute("data-pulse", String(connection.activity > 0.18));
   }
 
@@ -3680,6 +3948,38 @@ canvas.addEventListener("pointerdown", (event) => {
   pointerDownPosition = { x: event.clientX, y: event.clientY };
   nodeHasMoved = false;
 
+  if (wiringEditing) {
+    const clickedConnection = getConnectionAtPointer(event);
+    if (clickedConnection) {
+      removeAuthoredConnection(clickedConnection);
+      wiringSource = null;
+      selectNode(null);
+      syncWiringUi();
+      return;
+    }
+    const clickedNode = getNodeAtPointer(event);
+    if (clickedNode) {
+      if (!wiringSource) {
+        wiringSource = clickedNode;
+        selectNode(clickedNode);
+        showToast(`${contextualComponentLabel(clickedNode.kind)} selected as the source. Choose a destination.`);
+      } else if (wiringSource === clickedNode) {
+        wiringSource = null;
+        selectNode(null);
+        showToast("Cable source cancelled.");
+      } else if (addAuthoredConnection(wiringSource, clickedNode)) {
+        wiringSource = null;
+        selectNode(null);
+      }
+      syncWiringUi();
+      return;
+    }
+    wiringSource = null;
+    selectNode(null);
+    syncWiringUi();
+    return;
+  }
+
   if (activeKind) {
     const grid = getGridAtPointer(event);
     if (grid && placeComponent(activeKind, grid)) setActiveKind(null);
@@ -3713,6 +4013,12 @@ canvas.addEventListener("pointermove", (event) => {
     updateGhost(activeKind, getGridAtPointer(event));
     return;
   }
+  if (wiringEditing) {
+    hoveredNode = getNodeAtPointer(event);
+    hoveredConnection = hoveredNode ? null : getConnectionAtPointer(event);
+    canvas.dataset.mode = hoveredNode ? "wiring-node" : hoveredConnection ? "wiring-remove" : "wiring";
+    return;
+  }
   if (!draggedNode) {
     hoveredNode = getNodeAtPointer(event);
     canvas.dataset.mode = hoveredNode ? "inspect" : "idle";
@@ -3731,8 +4037,12 @@ canvas.addEventListener("pointerup", (event) => {
   if (isOrbiting && event.pointerId === orbitPointerId) {
     isOrbiting = false;
     orbitPointerId = -1;
-    canvas.dataset.mode = activeKind ? "placing" : "idle";
+    canvas.dataset.mode = wiringEditing ? "wiring" : activeKind ? "placing" : "idle";
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    return;
+  }
+  if (wiringEditing) {
+    canvas.dataset.mode = "wiring";
     return;
   }
   if (draggedNode && nodeHasMoved) showToast(`${componentDefinitions[draggedNode.kind].label} moved. Data cables rerouted.`);
@@ -3747,11 +4057,14 @@ canvas.addEventListener("pointercancel", () => {
   orbitPointerId = -1;
   draggedNode = null;
   hoveredNode = null;
-  canvas.dataset.mode = activeKind ? "placing" : "idle";
+  canvas.dataset.mode = wiringEditing ? "wiring" : activeKind ? "placing" : "idle";
 });
 
 canvas.addEventListener("pointerleave", () => {
-  if (!draggedNode && !isOrbiting) hoveredNode = null;
+  if (!draggedNode && !isOrbiting) {
+    hoveredNode = null;
+    hoveredConnection = null;
+  }
 });
 
 canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -3801,6 +4114,18 @@ window.addEventListener("keydown", (event) => {
       updateTelemetry();
       return;
     }
+    if (wiringEditing) {
+      event.preventDefault();
+      if (wiringSource) {
+        wiringSource = null;
+        selectNode(null);
+        syncWiringUi();
+        showToast("Cable source cancelled.");
+      } else {
+        setWiringEditing(false);
+      }
+      return;
+    }
     setActiveKind(null);
     selectNode(null);
   }
@@ -3816,6 +4141,10 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     rotateView(1);
   }
+  if (event.key.toLowerCase() === "w" && resultOverlay.dataset.visible !== "true") {
+    event.preventDefault();
+    setWiringEditing(topologyMode === "automatic" || !wiringEditing);
+  }
   if (event.key.toLowerCase() === "t" && resultOverlay.dataset.visible !== "true") {
     event.preventDefault();
     if (isRunning) stopTest();
@@ -3829,6 +4158,8 @@ scrapButton.addEventListener("click", () => {
 
 rotateLeftButton.addEventListener("click", () => rotateView(-1));
 rotateRightButton.addEventListener("click", () => rotateView(1));
+wiringButton.addEventListener("click", () => setWiringEditing(topologyMode === "automatic" || !wiringEditing));
+restoreAutoButton.addEventListener("click", restoreAutomaticTopology);
 
 runButton.addEventListener("click", () => {
   if (isRunning) stopTest();
@@ -4005,7 +4336,7 @@ if (demoMode !== null) {
     updateTelemetry();
   }
   closeCampaignScreen();
-  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-backlog" || demoMode === "analytics-failed") {
+  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-backlog" || demoMode === "analytics-manual" || demoMode === "analytics-manual-cut" || demoMode === "analytics-failed") {
     loadInheritedScenario(1);
     if (demoMode === "analytics-queue" || demoMode === "analytics-backlog") placeComponent("queue", { col: 5, row: 4 });
     if (demoMode === "analytics-backlog") {
@@ -4013,6 +4344,13 @@ if (demoMode !== null) {
       if (inheritedWorker) removeNode(inheritedWorker);
     }
     if (demoMode === "analytics-scale") placeComponent("worker", { col: 7, row: 5 });
+    if (demoMode === "analytics-manual" || demoMode === "analytics-manual-cut") {
+      setWiringEditing(true);
+      if (demoMode === "analytics-manual-cut") {
+        const blockingEdge = connections.find((connection) => connection.from.kind === "api" && connection.to.kind === "worker" && connection.mode === "request");
+        if (blockingEdge) removeAuthoredConnection(blockingEdge);
+      }
+    }
     updateUi();
     updateTelemetry();
     if (demoMode === "analytics-failed") finishTest(false);

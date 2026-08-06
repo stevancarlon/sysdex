@@ -232,9 +232,11 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
         0,
       );
       for (const id of asynchronousProcessorIds) functionalNodeIds.add(id);
-    } else if (synchronousProcessorIds.length > 0) {
+    }
+    if (synchronousProcessorIds.length > 0) {
       backgroundMode = "synchronous";
-      backgroundCapacity = sumCapacity(synchronousProcessorIds.map((id) => nodeById.get(id)).filter((node): node is SimulationNode => Boolean(node))) / background.trafficFraction;
+      const synchronousCapacity = sumCapacity(synchronousProcessorIds.map((id) => nodeById.get(id)).filter((node): node is SimulationNode => Boolean(node))) / background.trafficFraction;
+      backgroundCapacity = Math.max(backgroundCapacity, synchronousCapacity);
       backgroundProcessorCount = synchronousProcessorIds.reduce(
         (total, id) => total + stateMultiplier(nodeById.get(id)?.state),
         0,

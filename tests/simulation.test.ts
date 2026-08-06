@@ -95,6 +95,21 @@ test("scaling a synchronous dependency is a valid but costlier alternative", () 
   assert.equal(result.meetsContract, true);
 });
 
+test("an async side path cannot hide a synchronous dependency that still blocks", () => {
+  const graph = inheritedGraph();
+  graph.nodes.push(node("events", "queue"));
+  graph.edges.push(
+    edge("api-1", "events", "enqueue"),
+    edge("events", "analytics-1", "consume"),
+  );
+
+  const result = evaluateSocialRedirectGraph(graph, options);
+
+  assert.equal(result.backgroundMode, "synchronous");
+  assert.equal(result.latency, 144);
+  assert.equal(result.meetsContract, false);
+});
+
 test("a disconnected replica contributes no request capacity", () => {
   const graph = inheritedGraph();
   graph.nodes = graph.nodes.filter((candidate) => candidate.id !== "api-4");
