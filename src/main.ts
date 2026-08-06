@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPixelatedPass } from "three/addons/postprocessing/RenderPixelatedPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import "./style.css";
 import {
   campaignPhases,
@@ -61,8 +62,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "LB",
     role: "Traffic dispatcher",
     cost: 120,
-    color: 0x397aa6,
-    cssColor: "#397aa6",
+    color: 0x94c2d0,
+    cssColor: "#94c2d0",
     description: "Distributes incoming requests across API servers so no single machine receives all the traffic.",
     capacityText: "950 req/s",
     effectText: "Unlocks horizontal scaling",
@@ -72,8 +73,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "API",
     role: "Request processor",
     cost: 180,
-    color: 0x91b8ca,
-    cssColor: "#6e9fb8",
+    color: 0xc0c5cf,
+    cssColor: "#c0c5cf",
     description: "Runs the URL-shortening application: validates requests, creates short codes, and returns redirects.",
     capacityText: "300 req/s",
     effectText: "Add replicas for throughput",
@@ -83,8 +84,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "R",
     role: "Fast memory cabinet",
     cost: 110,
-    color: 0x285c88,
-    cssColor: "#285c88",
+    color: 0x8099b8,
+    cssColor: "#8099b8",
     description: "Keeps frequently requested short links in fast key-value memory, reducing database work and latency.",
     capacityText: "1,750 reads/s",
     effectText: "Cuts redirect latency by 92 ms",
@@ -94,8 +95,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "PG",
     role: "Durable archive",
     cost: 220,
-    color: 0x3d8294,
-    cssColor: "#3d8294",
+    color: 0x87b1ae,
+    cssColor: "#87b1ae",
     description: "Durably stores the mapping between each short code and its original destination URL.",
     capacityText: "560 reads/s",
     effectText: "Required durable source of truth",
@@ -105,8 +106,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "Q",
     role: "Work conveyor",
     cost: 130,
-    color: 0x566f9e,
-    cssColor: "#566f9e",
+    color: 0x9fa1b8,
+    cssColor: "#9fa1b8",
     description: "Buffers analytics and background jobs so API requests do not wait for slower work to finish.",
     capacityText: "1,200 jobs/s",
     effectText: "Buffers work for async processors",
@@ -116,8 +117,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "WK",
     role: "Async job processor",
     cost: 140,
-    color: 0xb07858,
-    cssColor: "#b07858",
+    color: 0xcf8678,
+    cssColor: "#cf8678",
     description: "Consumes queued analytics, media, and location jobs away from the synchronous API request path.",
     capacityText: "1,600 jobs/s",
     effectText: "Completes the Queue → Worker path",
@@ -127,8 +128,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "GEO",
     role: "Proximity search grid",
     cost: 260,
-    color: 0x4da89c,
-    cssColor: "#4da89c",
+    color: 0x80b1b2,
+    cssColor: "#80b1b2",
     description: "Partitions location data into nearby cells so matching and dispatch queries avoid global scans.",
     capacityText: "3,200 lookups/s",
     effectText: "Enables low-latency nearby search",
@@ -138,8 +139,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "OBJ",
     role: "Media bucket cluster",
     cost: 320,
-    color: 0x9c9366,
-    cssColor: "#9c9366",
+    color: 0xb5acc0,
+    cssColor: "#b5acc0",
     description: "Stores large immutable media objects separately from transactional metadata in PostgreSQL.",
     capacityText: "5,000 objects/s",
     effectText: "Removes media blobs from the database",
@@ -149,8 +150,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "CDN",
     role: "Regional content edge",
     cost: 400,
-    color: 0x5aaed0,
-    cssColor: "#5aaed0",
+    color: 0x8dc3cf,
+    cssColor: "#8dc3cf",
     description: "Caches popular content near users and shields the origin from repeated global reads.",
     capacityText: "4,000 edge r/s",
     effectText: "Offloads 22% origin traffic per edge",
@@ -178,6 +179,8 @@ let errorSlo = currentPhase.errorSlo;
 const rampDuration = 5;
 let certificationDuration = currentPhase.certificationSeconds;
 let testTimeLimit = currentPhase.testTimeLimit;
+const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+let prefersReducedMotion = reducedMotionQuery.matches;
 
 function contextualComponentLabel(kind: ComponentKind) {
   if (kind !== "worker") return componentDefinitions[kind].label;
@@ -496,6 +499,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas")!;
+canvas.dataset.reducedMotion = String(prefersReducedMotion);
+reducedMotionQuery.addEventListener("change", (event) => {
+  prefersReducedMotion = event.matches;
+  canvas.dataset.reducedMotion = String(prefersReducedMotion);
+});
 const partsList = document.querySelector<HTMLDivElement>("#parts-list")!;
 const budgetElement = document.querySelector<HTMLSpanElement>("#budget")!;
 const runButton = document.querySelector<HTMLButtonElement>("#run-button")!;
@@ -650,6 +658,46 @@ const pixelatedPass = new RenderPixelatedPass(4, scene, camera, {
   depthEdgeStrength: 0.14,
 });
 composer.addPass(pixelatedPass);
+const palettePass = new ShaderPass({
+  name: "PixelPaletteShader",
+  uniforms: {
+    tDiffuse: { value: null },
+    blockSize: { value: pixelatedPass.pixelSize },
+    colorLevels: { value: 14 },
+    ditherStrength: { value: 0.04 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float blockSize;
+    uniform float colorLevels;
+    uniform float ditherStrength;
+    varying vec2 vUv;
+
+    float orderedDither(vec2 block) {
+      vec2 cell = mod(block, 2.0);
+      float upper = mix(0.0, 2.0, cell.x);
+      float lower = mix(3.0, 1.0, cell.x);
+      return (mix(upper, lower, cell.y) + 0.5) / 4.0 - 0.5;
+    }
+
+    void main() {
+      vec4 sampleColor = texture2D(tDiffuse, vUv);
+      vec2 pixelBlock = floor(gl_FragCoord.xy / blockSize);
+      float dither = orderedDither(pixelBlock) * ditherStrength / colorLevels;
+      vec3 quantized = floor(clamp(sampleColor.rgb + dither, 0.0, 1.0) * colorLevels + 0.5) / colorLevels;
+      gl_FragColor = vec4(quantized, sampleColor.a);
+    }
+  `,
+});
+composer.addPass(palettePass);
 const cameraOrbitRadius = Math.hypot(camera.position.x, camera.position.z);
 const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
@@ -1228,17 +1276,6 @@ function addMesh(
 function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   const group = new THREE.Group();
   group.userData.kind = kind;
-  const casingTints: Record<ComponentKind, number> = {
-    loadBalancer: 0x94c2d0,
-    api: 0xc0c5cf,
-    redis: 0x8099b8,
-    postgres: 0x87b1ae,
-    queue: 0x9fa1b8,
-    worker: 0xcf8678,
-    geoIndex: 0x80b1b2,
-    objectStorage: 0xb5acc0,
-    cdn: 0x8dc3cf,
-  };
   const dark = material(0x707b8e, {
     map: paintedMachineDarkTexture,
     bumpMap: paintedMachineDarkTexture,
@@ -1254,7 +1291,7 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
     roughness: 0.8,
     metalness: 0.1,
   });
-  const accent = material(casingTints[kind], {
+  const accent = material(componentDefinitions[kind].color, {
     map: paintedMachineNeutralTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.016,
@@ -2023,7 +2060,7 @@ function shortestAngleDifference(from: number, to: number) {
 
 function updateCameraOrbit(delta: number) {
   const difference = shortestAngleDifference(cameraAzimuth, targetCameraAzimuth);
-  cameraAzimuth += difference * Math.min(1, delta * 9);
+  cameraAzimuth += difference * (prefersReducedMotion ? 1 : Math.min(1, delta * 9));
   camera.position.set(
     Math.sin(cameraAzimuth) * cameraOrbitRadius,
     cameraOrbitHeight,
@@ -2090,7 +2127,7 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
   group.position.copy(gridToWorld(grid));
   group.scale.setScalar(0.08);
   group.rotation.y = -0.08;
-  group.userData.spawnProgress = 0;
+  group.userData.spawnProgress = prefersReducedMotion ? 1 : 0;
   group.userData.dragLift = 0;
   machinesGroup.add(group);
 
@@ -2146,10 +2183,14 @@ function updateMachineAnimations(delta: number) {
   const demand = isRunning ? Math.max(1, currentDemand) : targetRps;
   const metrics = calculateMetrics(demand);
   const activity = isRunning ? THREE.MathUtils.clamp(currentDemand / targetRps, 0.2, 1) : 0.08;
+  const motionDelta = prefersReducedMotion ? 0 : delta;
+  const motionElapsed = prefersReducedMotion ? 0 : elapsed;
 
   for (const node of nodes) {
     const group = node.group;
-    const spawnProgress = Math.min(1, (group.userData.spawnProgress as number ?? 1) + delta * 3.6);
+    const spawnProgress = prefersReducedMotion
+      ? 1
+      : Math.min(1, (group.userData.spawnProgress as number ?? 1) + delta * 3.6);
     group.userData.spawnProgress = spawnProgress;
     const back = 1.35;
     const shifted = spawnProgress - 1;
@@ -2162,11 +2203,15 @@ function updateMachineAnimations(delta: number) {
     const targetScale = (selected ? 1.025 : hovered ? 0.985 : 0.94) * (failed ? 0.9 : degraded ? 0.96 : 1);
     const desiredLift = node === draggedNode ? 0.2 : 0;
     group.userData.dragLift = THREE.MathUtils.lerp(group.userData.dragLift as number ?? 0, desiredLift, Math.min(1, delta * 15));
-    const idleBob = Math.sin(elapsed * (1.35 + activity) + node.id * 1.7) * (0.004 + activity * 0.009) + (failed ? Math.sin(elapsed * 29) * 0.012 : 0);
+    const idleBob = prefersReducedMotion
+      ? 0
+      : Math.sin(motionElapsed * (1.35 + activity) + node.id * 1.7) * (0.004 + activity * 0.009) + (failed ? Math.sin(motionElapsed * 29) * 0.012 : 0);
     group.position.y = gridToWorld(node.grid).y + (group.userData.dragLift as number) + idleBob;
     group.scale.setScalar(Math.max(0.01, targetScale * spawnEase));
-    group.rotation.y = -0.08 + (overloaded || failed ? Math.sin(elapsed * 34 + node.id) * (failed ? 0.03 : 0.018) : 0);
-    group.rotation.z = THREE.MathUtils.lerp(group.rotation.z, failed ? -0.035 : 0, Math.min(1, delta * 8));
+    group.rotation.y = -0.08 + (!prefersReducedMotion && (overloaded || failed) ? Math.sin(motionElapsed * 34 + node.id) * (failed ? 0.03 : 0.018) : 0);
+    group.rotation.z = prefersReducedMotion
+      ? failed ? -0.035 : 0
+      : THREE.MathUtils.lerp(group.rotation.z, failed ? -0.035 : 0, Math.min(1, delta * 8));
 
     if (selected) {
       selectedState.textContent = failed ? "Failed" : degraded ? "Recovering" : "Healthy";
@@ -2180,46 +2225,50 @@ function updateMachineAnimations(delta: number) {
         const ringMaterial = object.material as THREE.MeshBasicMaterial;
         const spawnFlash = Math.max(0, 1 - spawnProgress) * 0.9;
         const desiredOpacity = Math.max(spawnFlash, selected ? 0.76 : hovered ? 0.38 : overloaded ? 0.58 : 0);
-        ringMaterial.opacity = THREE.MathUtils.lerp(ringMaterial.opacity, desiredOpacity, Math.min(1, delta * 12));
+        ringMaterial.opacity = prefersReducedMotion
+          ? desiredOpacity
+          : THREE.MathUtils.lerp(ringMaterial.opacity, desiredOpacity, Math.min(1, delta * 12));
         ringMaterial.color.setHex(failed ? 0xf05f70 : degraded ? 0xf0b85f : overloaded ? 0xe7687f : componentDefinitions[node.kind].color);
-        object.rotation.z += delta * (selected ? 1.25 : 0.45);
-        const ringScale = 1 + spawnFlash * 0.45 + Math.sin(elapsed * 3 + node.id) * (selected ? 0.035 : 0.012);
+        object.rotation.z += motionDelta * (selected ? 1.25 : 0.45);
+        const ringScale = 1 + spawnFlash * 0.45 + (prefersReducedMotion ? 0 : Math.sin(motionElapsed * 3 + node.id) * (selected ? 0.035 : 0.012));
         object.scale.setScalar(ringScale);
       }
-      if (motion === "radarSweep") object.rotation.y += delta * (0.45 + activity * 4.4);
+      if (motion === "radarSweep") object.rotation.y += motionDelta * (0.45 + activity * 4.4);
       if (motion === "beacon") {
-        const pulse = 1 + Math.sin(elapsed * (3.4 + activity * 4.8) + (object.userData.phase as number ?? 0)) * (0.025 + activity * 0.1);
+        const pulse = prefersReducedMotion
+          ? 1
+          : 1 + Math.sin(motionElapsed * (3.4 + activity * 4.8) + (object.userData.phase as number ?? 0)) * (0.025 + activity * 0.1);
         object.scale.setScalar(pulse);
       }
       if (motion === "memoryLight" && object instanceof THREE.Mesh) {
         const phase = object.userData.phase as number ?? 0;
-        const signal = 0.5 + 0.5 * Math.sin(elapsed * (4 + activity * 7) + phase * Math.PI * 2);
+        const signal = prefersReducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(motionElapsed * (4 + activity * 7) + phase * Math.PI * 2);
         (object.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.45 + activity * (0.8 + signal * 2.2);
       }
       if (motion === "archiveDisk") {
-        object.rotateY(delta * (object.userData.direction as number) * (0.25 + activity * 3.1));
+        object.rotateY(motionDelta * (object.userData.direction as number) * (0.25 + activity * 3.1));
       }
-      if (motion === "queueRoller") object.rotateY(delta * (0.35 + activity * 5.8));
-      if (motion === "workerFan") object.rotateZ(delta * (1.2 + activity * 9) * (object.userData.direction as number ?? 1));
+      if (motion === "queueRoller") object.rotateY(motionDelta * (0.35 + activity * 5.8));
+      if (motion === "workerFan") object.rotateZ(motionDelta * (1.2 + activity * 9) * (object.userData.direction as number ?? 1));
       if (motion === "geoCell") {
         const phase = object.userData.phase as number ?? 0;
-        object.scale.y = 1 + Math.sin(elapsed * (2.2 + activity * 2.4) + phase * Math.PI * 2) * (0.04 + activity * 0.08);
+        object.scale.y = prefersReducedMotion ? 1 : 1 + Math.sin(motionElapsed * (2.2 + activity * 2.4) + phase * Math.PI * 2) * (0.04 + activity * 0.08);
       }
       if (motion === "geoRing") {
         const phase = object.userData.phase as number ?? 0;
-        const pulse = 1 + Math.sin(elapsed * 2.8 + phase * 8) * (0.018 + activity * 0.035);
+        const pulse = prefersReducedMotion ? 1 : 1 + Math.sin(motionElapsed * 2.8 + phase * 8) * (0.018 + activity * 0.035);
         object.scale.setScalar(pulse);
       }
-      if (motion === "cdnDish") object.rotation.y = Math.sin(elapsed * (0.7 + activity * 1.4)) * 0.42;
+      if (motion === "cdnDish") object.rotation.y = prefersReducedMotion ? 0 : Math.sin(motionElapsed * (0.7 + activity * 1.4)) * 0.42;
       if (motion === "edgeSignal") {
         const phase = object.userData.phase as number ?? 0;
         const signalMaterial = (object as THREE.Mesh).material as THREE.MeshStandardMaterial;
-        signalMaterial.opacity = 0.42 + (0.5 + 0.5 * Math.sin(elapsed * 3.5 + phase * 9)) * 0.38;
+        signalMaterial.opacity = prefersReducedMotion ? 0.62 : 0.42 + (0.5 + 0.5 * Math.sin(motionElapsed * 3.5 + phase * 9)) * 0.38;
         signalMaterial.transparent = true;
       }
       if (motion === "queueBox") {
         const phase = object.userData.phase as number ?? 0;
-        const travel = elapsed * (0.18 + activity * 0.55) + phase * Math.PI * 2;
+        const travel = motionElapsed * (0.18 + activity * 0.55) + phase * Math.PI * 2;
         object.position.x = Math.sin(travel) * 0.29;
         object.position.y = 0.77 + Math.sin(travel * 2) * 0.018;
       }
@@ -3376,12 +3425,12 @@ function updatePackets(delta: number) {
     packet.mesh.position.copy(position);
     packet.mesh.position.y += 0.05;
     packet.mesh.lookAt(lookAhead.x, lookAhead.y + 0.05, lookAhead.z);
-    const pulse = 1 + Math.sin(elapsed * 8 + packet.phase) * 0.025;
+    const pulse = prefersReducedMotion ? 1 : 1 + Math.sin(elapsed * 8 + packet.phase) * 0.025;
     packet.mesh.scale.setScalar(pulse);
     const signal = packet.mesh.children.find((child) => child.userData.isPacketSignal) as THREE.Mesh | undefined;
     if (signal) {
       const signalMaterial = signal.material as THREE.MeshBasicMaterial;
-      signalMaterial.opacity = 0.48 + Math.sin(elapsed * 8 + packet.phase) * 0.14;
+      signalMaterial.opacity = prefersReducedMotion ? 0.62 : 0.48 + Math.sin(elapsed * 8 + packet.phase) * 0.14;
     }
   }
 }
@@ -3663,6 +3712,13 @@ dismissResultButton.addEventListener("click", () => {
 
 function updateLabels() {
   const rect = canvas.getBoundingClientRect();
+  const occupiedLabels: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+  const overlapsLabel = (candidate: { left: number; right: number; top: number; bottom: number }) => occupiedLabels.some(
+    (occupied) => candidate.left < occupied.right
+      && candidate.right > occupied.left
+      && candidate.top < occupied.bottom
+      && candidate.bottom > occupied.top,
+  );
   for (const node of nodes) {
     const projected = node.group.position.clone();
     projected.y += 1.95;
@@ -3671,7 +3727,14 @@ function updateLabels() {
     const y = (-projected.y * 0.5 + 0.5) * rect.height;
     node.label.style.left = `${x}px`;
     node.label.style.top = `${y}px`;
-    node.label.style.opacity = projected.z < 1 ? "1" : "0";
+    const labelVisible = projected.z < 1;
+    node.label.style.opacity = labelVisible ? "1" : "0";
+    if (labelVisible) {
+      const nameLength = contextualComponentLabel(node.kind).length;
+      const roleLength = contextualComponentRole(node.kind).length;
+      const width = Math.max(74, Math.min(150, Math.max(nameLength, roleLength) * 5.4 + 16));
+      occupiedLabels.push({ left: x - width / 2 - 4, right: x + width / 2 + 4, top: y - 34, bottom: y + 4 });
+    }
   }
   for (const connection of connections) {
     if (!connection.annotation) continue;
@@ -3680,11 +3743,45 @@ function updateLabels() {
     projected.project(camera);
     const x = (projected.x * 0.5 + 0.5) * rect.width;
     const y = (-projected.y * 0.5 + 0.5) * rect.height;
-    connection.annotation.style.left = `${x}px`;
-    connection.annotation.style.top = `${y}px`;
     const instructionalRoute = currentPhaseIndex === 1
       && (connection.label?.includes("BLOCKING") || connection.label?.includes("NON-BLOCKING"));
-    connection.annotation.dataset.visible = String((isRunning || instructionalRoute) && projected.z < 1);
+    const annotationVisible = (isRunning || instructionalRoute) && projected.z < 1;
+    connection.annotation.dataset.visible = String(annotationVisible);
+    let annotationX = x;
+    let annotationY = y;
+    if (annotationVisible) {
+      const width = Math.max(54, Math.min(180, (connection.label?.length ?? 8) * 4.7 + 24));
+      const height = 20;
+      const offsets: ReadonlyArray<readonly [number, number]> = [
+        [0, 0], [0, 20], [0, -20], [30, 12], [-30, 12], [32, -12], [-32, -12],
+        [0, 40], [0, -40], [58, 0], [-58, 0], [54, 24], [-54, 24], [54, -24], [-54, -24],
+      ];
+      let bestCandidate: { left: number; right: number; top: number; bottom: number } | null = null;
+      let bestPenalty = Number.POSITIVE_INFINITY;
+      for (const [offsetX, offsetY] of offsets) {
+        const candidate = {
+          left: x + offsetX - width / 2 - 3,
+          right: x + offsetX + width / 2 + 3,
+          top: y + offsetY - height / 2 - 3,
+          bottom: y + offsetY + height / 2 + 3,
+        };
+        if (candidate.left < 6 || candidate.right > rect.width - 6 || candidate.top < 6 || candidate.bottom > rect.height - 6) continue;
+        const overlapPenalty = occupiedLabels.reduce((total, occupied) => {
+          const overlapWidth = Math.max(0, Math.min(candidate.right, occupied.right) - Math.max(candidate.left, occupied.left));
+          const overlapHeight = Math.max(0, Math.min(candidate.bottom, occupied.bottom) - Math.max(candidate.top, occupied.top));
+          return total + overlapWidth * overlapHeight;
+        }, 0);
+        if (overlapPenalty >= bestPenalty) continue;
+        bestPenalty = overlapPenalty;
+        bestCandidate = candidate;
+        annotationX = x + offsetX;
+        annotationY = y + offsetY;
+        if (!overlapsLabel(candidate)) break;
+      }
+      if (bestCandidate) occupiedLabels.push(bestCandidate);
+    }
+    connection.annotation.style.left = `${annotationX}px`;
+    connection.annotation.style.top = `${annotationY}px`;
   }
 }
 
@@ -3705,7 +3802,7 @@ function resize() {
 function updateBoardActivity() {
   const load = isRunning ? THREE.MathUtils.clamp(currentDemand / Math.max(1, targetRps), 0.15, 1.5) : 0;
   for (const [index, signalMaterial] of boardActivityMaterials.entries()) {
-    const wave = 0.5 + 0.5 * Math.sin(elapsed * (isRunning ? 5.2 : 1.15) - index * 1.45);
+    const wave = prefersReducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(elapsed * (isRunning ? 5.2 : 1.15) - index * 1.45);
     signalMaterial.emissiveIntensity = isRunning ? 0.28 + wave * 0.68 * load : 0.1 + wave * 0.08;
   }
 }
