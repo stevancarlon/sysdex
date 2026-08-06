@@ -382,9 +382,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <p id="incident-summary"></p>
       <div class="incident-impact" id="incident-impact"></div>
       <p class="incident-prompt" id="incident-prompt"></p>
-      <div class="incident-actions">
-        <button id="incident-manual-button" type="button">Restart failed instance</button>
-        <button id="incident-policy-button" type="button">Apply resilience policy</button>
+      <div class="incident-task" id="incident-task" data-complete="false" hidden>
+        <div class="incident-task-heading">
+          <span>Live topology change</span>
+          <b id="incident-task-count">2 / 3 installed</b>
+        </div>
+        <strong id="incident-task-title">Add one API Server</strong>
+        <p id="incident-task-description">Select API Server in the catalogue, then install it on a free floor tile.</p>
+        <div class="incident-task-progress" aria-hidden="true"><span id="incident-task-progress"></span></div>
       </div>
     </section>
 
@@ -526,8 +531,11 @@ const incidentTitle = document.querySelector<HTMLElement>("#incident-title")!;
 const incidentSummary = document.querySelector<HTMLElement>("#incident-summary")!;
 const incidentImpact = document.querySelector<HTMLElement>("#incident-impact")!;
 const incidentPrompt = document.querySelector<HTMLElement>("#incident-prompt")!;
-const incidentManualButton = document.querySelector<HTMLButtonElement>("#incident-manual-button")!;
-const incidentPolicyButton = document.querySelector<HTMLButtonElement>("#incident-policy-button")!;
+const incidentTask = document.querySelector<HTMLElement>("#incident-task")!;
+const incidentTaskCount = document.querySelector<HTMLElement>("#incident-task-count")!;
+const incidentTaskTitle = document.querySelector<HTMLElement>("#incident-task-title")!;
+const incidentTaskDescription = document.querySelector<HTMLElement>("#incident-task-description")!;
+const incidentTaskProgress = document.querySelector<HTMLElement>("#incident-task-progress")!;
 let brandItemIndex = 0;
 let brandActiveLayer: 0 | 1 = 0;
 
@@ -774,6 +782,9 @@ let incidentMode: "pending" | "active" | "recovering" | "resolved" = "pending";
 let incidentRecoveryRemaining = 0;
 let incidentTargetNodeId: number | null = null;
 let incidentResolution = "";
+let incidentResponseRequiredKind: ComponentKind | null = null;
+let incidentResponseRequiredCount = 0;
+let incidentBudgetCredit = 0;
 
 function configSpend(configs: Set<ConfigId> = activeConfigs) {
   return configDefinitions.reduce((sum, config) => sum + (configs.has(config.id) ? config.cost : 0), 0);
@@ -885,6 +896,7 @@ function setPhaseParameters(index: number) {
   errorSlo = currentPhase.errorSlo;
   certificationDuration = currentPhase.certificationSeconds;
   testTimeLimit = currentPhase.testTimeLimit;
+  incidentBudgetCredit = 0;
 }
 
 function openCampaignScreen() {
@@ -1893,7 +1905,7 @@ function isOccupied(grid: GridPosition, exceptNode?: PlacedComponent) {
 }
 
 function remainingBudget() {
-  return totalBudget - installedMachineSpend() - configSpend();
+  return totalBudget + incidentBudgetCredit - installedMachineSpend() - configSpend();
 }
 
 function placeComponent(kind: ComponentKind, grid: GridPosition) {
@@ -1928,6 +1940,7 @@ function placeComponent(kind: ComponentKind, grid: GridPosition) {
   const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, state: "healthy" };
   nodes.push(node);
   rebuildConnections();
+  checkTopologyIncidentResponse();
   updateUi();
   updateTelemetry();
   selectNode(node);
@@ -2233,33 +2246,58 @@ function rebuildConnections() {
 
   const loadBalancer = firstNode("loadBalancer");
   const apiNodes = nodes.filter((node) => node.kind === "api");
-  const redis = firstNode("redis");
-  const postgres = firstNode("postgres");
+  const redisNodes = nodes.filter((node) => node.kind === "redis");
+  const postgresNodes = nodes.filter((node) => node.kind === "postgres");
   const queue = firstNode("queue");
   const workers = nodes.filter((node) => node.kind === "worker");
-  const geoIndex = firstNode("geoIndex");
-  const objectStorage = firstNode("objectStorage");
+  const geoNodes = nodes.filter((node) => node.kind === "geoIndex");
+  const objectStorageNodes = nodes.filter((node) => node.kind === "objectStorage");
   const cdnNodes = nodes.filter((node) => node.kind === "cdn");
 
   const primaryApi = apiNodes[0];
+  const primaryPostgres = postgresNodes[0];
   const usesGeoPath = currentPhase.workload === "matching" || currentPhase.workload === "dispatch";
-  const geoToArchive = usesGeoPath && geoIndex ? connect(geoIndex, postgres, "PROFILE SHARD") : null;
-  const cacheToArchive = redis ? connect(redis, usesGeoPath ? geoIndex : postgres) : null;
+  const archiveReplicationRoutes = postgresNodes.slice(1).map((replica, index) => [
+    connect(primaryPostgres, replica, index === 0 ? "REPLICA STREAM" : null),
+  ].filter((connection): connection is Connection => connection !== null));
+  const geoArchiveByNode = new Map<PlacedComponent, Connection | null>();
+  for (const [index, geoNode] of geoNodes.entries()) {
+    geoArchiveByNode.set(geoNode, connect(
+      geoNode,
+      postgresNodes[index % Math.max(1, postgresNodes.length)],
+      index === 0 ? "PROFILE SHARD" : null,
+    ));
+  }
+  const cacheDownstreamByNode = new Map<PlacedComponent, Connection | null>();
+  for (const [index, redisNode] of redisNodes.entries()) {
+    const downstream = usesGeoPath
+      ? geoNodes[index % Math.max(1, geoNodes.length)]
+      : postgresNodes[index % Math.max(1, postgresNodes.length)];
+    cacheDownstreamByNode.set(redisNode, connect(redisNode, downstream, index === 0 ? "CACHE FILL" : "CACHE SHARD"));
+  }
   const edgeIngress = cdnNodes.map((cdn, index) => connect(cdn, loadBalancer, index === 0 ? "EDGE REQUEST" : null));
   const edgeMediaRoutes = cdnNodes.map((cdn, index) => [
-    connect(cdn, objectStorage, index === 0 ? "EDGE MEDIA FILL" : null),
+    connect(cdn, objectStorageNodes[index % Math.max(1, objectStorageNodes.length)], index === 0 ? "EDGE MEDIA FILL" : null),
   ].filter((connection): connection is Connection => connection !== null));
   const ingressByApi = new Map<PlacedComponent, Connection | null>();
 
   for (const [index, api] of apiNodes.entries()) {
     const ingress = connect(loadBalancer, api, index === 0 ? "INGRESS REQUEST" : null);
+    const redis = redisNodes[index % Math.max(1, redisNodes.length)];
+    const geoIndex = geoNodes[index % Math.max(1, geoNodes.length)];
+    const postgres = postgresNodes[index % Math.max(1, postgresNodes.length)];
     const storage = connect(
       api,
       redis ?? (usesGeoPath ? geoIndex : postgres),
       index === 0 ? (redis ? "CACHE LOOKUP" : usesGeoPath ? "NEARBY QUERY" : "DATABASE READ") : null,
     );
     ingressByApi.set(api, ingress);
-    const requestRoute = [edgeIngress[index % Math.max(1, edgeIngress.length)] ?? null, ingress, storage, cacheToArchive, geoToArchive].filter(
+    const cacheDownstream = redis ? cacheDownstreamByNode.get(redis) ?? null : null;
+    const selectedGeo = redis && usesGeoPath
+      ? geoNodes[index % Math.max(1, geoNodes.length)]
+      : geoIndex;
+    const geoToArchive = selectedGeo ? geoArchiveByNode.get(selectedGeo) ?? null : null;
+    const requestRoute = [edgeIngress[index % Math.max(1, edgeIngress.length)] ?? null, ingress, storage, cacheDownstream, geoToArchive].filter(
       (connection): connection is Connection => connection !== null,
     );
     if (requestRoute.length > 0) trafficRoutes.push(requestRoute);
@@ -2275,7 +2313,9 @@ function rebuildConnections() {
     const queueToWorker = connect(queue, worker, index === 0 ? "CONSUME JOB" : null);
     const workerCommit = connect(
       worker,
-      currentPhase.workload === "streaming" ? objectStorage : postgres,
+      currentPhase.workload === "streaming"
+        ? objectStorageNodes[index % Math.max(1, objectStorageNodes.length)]
+        : postgresNodes[index % Math.max(1, postgresNodes.length)],
       index === 0 ? (currentPhase.workload === "streaming" ? "WRITE MEDIA" : "ASYNC COMMIT") : null,
     );
     const asyncRoute = [primaryApi ? ingressByApi.get(primaryApi) ?? null : null, asyncEvent, queueToWorker, workerCommit].filter(
@@ -2284,6 +2324,7 @@ function rebuildConnections() {
     if (asyncRoute.length > 1) trafficRoutes.push(asyncRoute);
   }
   for (const route of edgeMediaRoutes) if (route.length > 0) trafficRoutes.push(route);
+  for (const route of archiveReplicationRoutes) if (route.length > 0) trafficRoutes.push(route);
 }
 
 function calculateMetrics(demand = targetRps) {
@@ -2485,9 +2526,9 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
 
     if (isRunning) {
       if (incidentMode === "active") {
-        stage = "Live incident · Response required";
-        title = currentPhase.incident.title;
-        description = currentPhase.incident.operatorPrompt;
+        stage = "Live incident · Change the topology";
+        title = incidentTaskTitle.textContent ?? currentPhase.incident.title;
+        description = incidentTaskDescription.textContent ?? currentPhase.incident.operatorPrompt;
         state = "incident";
       } else if (incidentMode === "recovering") {
         stage = "Live incident · Mitigation running";
@@ -2535,10 +2576,8 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
   } else if (isRunning) {
     if (incidentMode === "active") {
       stage = "Step 3 of 3 · Respond to failure";
-      title = "Choose an incident response";
-      description = currentPhaseIndex === 0
-        ? "The drill is paused. Use the highlighted incident panel to restore service."
-        : "Use the incident panel before the failure consumes the error budget.";
+      title = "Add one API Server";
+      description = "Scale the live API tier on the floor. The Load Balancer will attach the new replica automatically.";
       state = "incident";
     } else if (incidentMode === "recovering") {
       stage = "Step 3 of 3 · Recovery in progress";
@@ -2596,7 +2635,9 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
   if (isRunning && incidentMode === "active") {
     runButton.disabled = true;
     runButton.dataset.ready = "false";
-    runButton.textContent = "Respond to incident above";
+    runButton.textContent = incidentResponseRequiredKind
+      ? `Install 1 more ${componentDefinitions[incidentResponseRequiredKind].label}`
+      : "Automated recovery active";
   } else if (isRunning && incidentMode === "recovering") {
     runButton.disabled = true;
     runButton.dataset.ready = "false";
@@ -2666,7 +2707,12 @@ function updateTelemetry() {
     node.label.querySelector("small")!.textContent = stateLabel;
   }
   document.querySelectorAll<HTMLButtonElement>(".part-card").forEach((button) => {
-    button.dataset.recommended = String(currentPhaseIndex === 0 && button.dataset.kind === metrics.bottleneckKind && !button.disabled);
+    const recommendedKind = incidentMode === "active" && incidentResponseRequiredKind
+      ? incidentResponseRequiredKind
+      : currentPhaseIndex === 0
+        ? metrics.bottleneckKind
+        : null;
+    button.dataset.recommended = String(button.dataset.kind === recommendedKind && !button.disabled);
   });
 
   if (testPhase === "idle") {
@@ -2687,10 +2733,41 @@ function resetIncident() {
   incidentRecoveryRemaining = 0;
   incidentTargetNodeId = null;
   incidentResolution = "";
+  incidentResponseRequiredKind = null;
+  incidentResponseRequiredCount = 0;
   incidentPanel.dataset.visible = "false";
   incidentPanel.dataset.status = "active";
   incidentPanel.dataset.tutorial = "false";
+  incidentTask.hidden = true;
+  incidentTask.dataset.complete = "false";
   for (const node of nodes) node.state = "healthy";
+}
+
+function checkTopologyIncidentResponse() {
+  if (incidentMode !== "active" || !incidentResponseRequiredKind) return;
+  const installedCount = nodes.filter((node) => node.kind === incidentResponseRequiredKind).length;
+  const requiredCount = incidentResponseRequiredCount;
+  const definition = componentDefinitions[incidentResponseRequiredKind];
+  incidentTaskCount.textContent = `${installedCount} / ${requiredCount} installed`;
+  incidentTaskProgress.style.scale = `${Math.min(1, installedCount / Math.max(1, requiredCount))} 1`;
+  if (installedCount < requiredCount) return;
+
+  incidentTask.dataset.complete = "true";
+  incidentTaskTitle.textContent = `${definition.label} capacity connected`;
+  incidentTaskDescription.textContent = incidentResponseRequiredKind === "api"
+    ? "The Load Balancer has added the replica to its request pool. Watch capacity recover."
+    : `The new ${definition.role.toLowerCase()} has joined the live topology. Watch the affected tier recover.`;
+  beginIncidentRecovery(false, `New ${definition.label} capacity joined the live topology`);
+}
+
+function topologyIncidentInstruction(kind: ComponentKind) {
+  if (kind === "api") return { title: "Add one API Server", reason: "Add stateless compute behind the Load Balancer." };
+  if (kind === "redis") return { title: "Add one Redis node", reason: "Split hot keys across another in-memory cache node." };
+  if (kind === "postgres") return { title: "Add one PostgreSQL replica", reason: "Restore durable capacity with another database replica." };
+  if (kind === "geoIndex") return { title: "Split with another Geo Index", reason: "Divide the hot geographic cells across another search partition." };
+  if (kind === "cdn") return { title: "Add another CDN Edge", reason: "Shift playback traffic away from the degraded edge region." };
+  const definition = componentDefinitions[kind];
+  return { title: `Add one ${definition.label}`, reason: `Add capacity to the affected ${definition.role.toLowerCase()} tier.` };
 }
 
 function availableIncidentPolicy() {
@@ -2732,23 +2809,47 @@ function triggerIncident() {
     <span><small>Error risk</small><b>+${incident.errorPenalty.toFixed(1)}%</b></span>
   `;
   incidentPrompt.textContent = incident.operatorPrompt;
-  incidentManualButton.textContent = incident.manualAction;
-  incidentManualButton.disabled = false;
   const policy = availableIncidentPolicy();
-  incidentPolicyButton.textContent = policy?.label ?? "No automated policy available";
-  incidentPolicyButton.disabled = policy === null;
   incidentPanel.dataset.status = "active";
   incidentPanel.dataset.tutorial = String(currentPhaseIndex === 0);
   incidentPanel.dataset.visible = "true";
-  if (currentPhaseIndex === 0) {
-    incidentStatus.textContent = "Response required · drill paused";
-    incidentPrompt.textContent = `${incident.operatorPrompt} This training drill will resume after you choose a response.`;
+
+  const automaticPolicy = currentPhaseIndex > 0 ? policy : null;
+  if (automaticPolicy) {
+    incidentResponseRequiredKind = null;
+    incidentResponseRequiredCount = 0;
+    incidentTask.hidden = false;
+    incidentTask.dataset.complete = "true";
+    incidentTaskCount.textContent = "Runbook active";
+    incidentTaskTitle.textContent = `${automaticPolicy.label} engaged`;
+    incidentTaskDescription.textContent = "The resilience policy you configured before the drill detected the failure and is executing automatically.";
+    incidentTaskProgress.style.scale = "1 1";
+    beginIncidentRecovery(true);
+  } else {
+    const responseKind = incident.affectedKind ?? "api";
+    const instruction = topologyIncidentInstruction(responseKind);
+    const installedCount = nodes.filter((node) => node.kind === responseKind).length;
+    incidentResponseRequiredKind = responseKind;
+    incidentResponseRequiredCount = installedCount + 1;
+    incidentBudgetCredit += componentDefinitions[responseKind].cost;
+    incidentStatus.textContent = currentPhaseIndex === 0 ? "Topology change required · paused" : "Topology change required";
+    incidentPrompt.textContent = currentPhaseIndex === 0
+      ? "One API server is offline and launch demand exceeds the remaining capacity. Scale the stateless API tier horizontally."
+      : `${incident.operatorPrompt} ${instruction.reason}`;
+    incidentTask.hidden = false;
+    incidentTask.dataset.complete = "false";
+    incidentTaskTitle.textContent = instruction.title;
+    incidentTaskDescription.textContent = `$${componentDefinitions[responseKind].cost} emergency budget added. Select ${componentDefinitions[responseKind].label} in the catalogue, then install it on a free floor tile.`;
+    checkTopologyIncidentResponse();
+    updateUi();
   }
   statusLight.textContent = "Incident";
-  showToast(`Incident ${incident.code}: ${incident.title}. Open the response panel now.`);
+  showToast(automaticPolicy
+    ? `${automaticPolicy.label} detected ${incident.code} and started recovery.`
+    : `Incident ${incident.code}: ${incidentTaskTitle.textContent}.`);
 }
 
-function beginIncidentRecovery(automated: boolean) {
+function beginIncidentRecovery(automated: boolean, resolutionOverride?: string) {
   if (incidentMode !== "active") return;
   const policy = availableIncidentPolicy();
   if (automated && !policy) return;
@@ -2757,13 +2858,14 @@ function beginIncidentRecovery(automated: boolean) {
     * (automated ? policy!.durationFactor : 1)
     * observabilityFactor;
   incidentMode = "recovering";
-  incidentResolution = automated ? policy!.resolution : currentPhase.incident.manualAction;
+  incidentResolution = resolutionOverride ?? (automated ? policy!.resolution : currentPhase.incident.manualAction);
   const target = nodes.find((node) => node.id === incidentTargetNodeId);
   if (target) target.state = "degraded";
   incidentPanel.dataset.status = "recovering";
   incidentStatus.textContent = "Mitigation running";
-  incidentManualButton.disabled = true;
-  incidentPolicyButton.disabled = true;
+  incidentPrompt.textContent = currentPhaseIndex === 0
+    ? "The new replica is taking traffic while the failed server returns to service."
+    : incidentPrompt.textContent;
   showToast(`${incidentResolution}. Monitoring recovery signals.`);
 }
 
@@ -2885,7 +2987,7 @@ function updateTest(delta: number) {
 
   if (currentPhaseIndex === 0 && incidentMode === "active") {
     missionPhaseElement.textContent = "Response required";
-    testPhaseElement.textContent = "Choose incident mitigation";
+    testPhaseElement.textContent = "Install another API Server";
     testTimeElement.textContent = "PAUSED";
     return;
   }
@@ -3072,9 +3174,6 @@ configList.addEventListener("click", (event) => {
 configOverlay.addEventListener("click", (event) => {
   if (event.target === configOverlay) closeConfigScreen(false);
 });
-incidentManualButton.addEventListener("click", () => beginIncidentRecovery(false));
-incidentPolicyButton.addEventListener("click", () => beginIncidentRecovery(true));
-
 partsList.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".part-card");
   if (!button || button.disabled) return;
@@ -3439,14 +3538,23 @@ if (demoMode !== null) {
       updateTelemetry();
     }
     if (demoMode === "release-certified") {
-      beginIncidentRecovery(false);
+      placeComponent("api", { col: 3, row: 4 });
       for (let second = 0; second < testTimeLimit; second += 1) updateTest(1);
       updateTelemetry();
     }
     if (demoMode === "certified" || demoMode === "failed") {
       for (let second = 0; second < testTimeLimit + 1; second += 1) {
         updateTest(1);
-        if (demoMode === "certified" && isIncidentAwaitingResponse()) beginIncidentRecovery(false);
+        if (demoMode === "certified" && isIncidentAwaitingResponse()) {
+          const responseKind = incidentResponseRequiredKind;
+          const responseGrid = ([
+            { col: 7, row: 5 },
+            { col: 7, row: 4 },
+            { col: 7, row: 2 },
+            { col: 5, row: 3 },
+          ] as GridPosition[]).find((grid) => !isOccupied(grid));
+          if (responseKind && responseGrid) placeComponent(responseKind, responseGrid);
+        }
       }
       updateTelemetry();
     }

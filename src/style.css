@@ -2143,29 +2143,30 @@ button,
 .incident-impact small { color: #b99ba3; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .incident-impact b { margin-top: 3px; color: #f0b1bc; font-size: 11px; font-variant-numeric: tabular-nums; }
 .incident-prompt { color: #f0c1c9 !important; }
-.incident-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
-.incident-actions button { min-height: 44px; padding: 7px 9px; border: 0; border-radius: 9px; color: #fff0f2; background: #7c314a; box-shadow: inset 0 -3px 0 rgba(33,8,19,.38), 0 0 0 1px rgba(255,255,255,.08); font: 900 9px/1.25 "Courier New", monospace; text-transform: uppercase; cursor: pointer; transition-property: scale, background-color, opacity; transition-duration: 150ms; }
-.incident-actions button:hover:not(:disabled) { background: #98415d; }
-.incident-actions button:active:not(:disabled) { scale: .96; }
-.incident-actions button:disabled { opacity: .38; cursor: not-allowed; }
-.incident-panel[data-tutorial="true"][data-status="active"] #incident-manual-button {
-  background: #b64f6c;
-  box-shadow:
-    inset 0 -3px 0 rgba(33, 8, 19, 0.32),
-    0 0 0 2px rgba(255, 181, 194, 0.34),
-    0 0 18px rgba(221, 91, 119, 0.28);
-  animation: tutorial-response 1.4s ease-in-out infinite;
+.incident-task {
+  margin-top: 12px;
+  padding: 11px;
+  border-radius: 12px;
+  background: rgba(7, 18, 27, 0.62);
+  box-shadow: 0 0 0 1px rgba(255, 184, 198, 0.18), inset 0 -3px 0 rgba(4, 9, 15, 0.25);
+  transition-property: background-color, box-shadow;
+  transition-duration: 220ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
-
-@keyframes tutorial-response {
-  50% {
-    box-shadow:
-      inset 0 -3px 0 rgba(33, 8, 19, 0.32),
-      0 0 0 3px rgba(255, 198, 208, 0.58),
-      0 0 25px rgba(221, 91, 119, 0.42);
-  }
-}
-
+.incident-task[hidden] { display: none; }
+.incident-task-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.incident-task-heading span,
+.incident-task-heading b { font: 900 8px "Courier New", monospace; letter-spacing: .06em; text-transform: uppercase; }
+.incident-task-heading span { color: #f1a5b2; }
+.incident-task-heading b { color: #ffdbe1; font-variant-numeric: tabular-nums; }
+.incident-task > strong { display: block; margin-top: 7px; color: #fff0f2; font: 800 15px var(--font-ui); text-wrap: balance; }
+.incident-task > p { margin: 5px 0 0; color: #d0b2b9; font-size: 10px; line-height: 1.4; text-wrap: pretty; }
+.incident-task-progress { height: 5px; margin-top: 10px; overflow: hidden; border-radius: 3px; background: rgba(3, 9, 15, .62); }
+.incident-task-progress span { display: block; width: 100%; height: 100%; border-radius: inherit; background: #ed8297; box-shadow: 0 0 9px rgba(237, 130, 151, .5); transform-origin: left center; scale: 0 1; transition-property: scale, background-color, box-shadow; transition-duration: 300ms; transition-timing-function: cubic-bezier(0.2, 0, 0, 1); }
+.incident-task[data-complete="true"] { background: rgba(18, 64, 62, .66); box-shadow: 0 0 0 1px rgba(113, 226, 216, .28), inset 0 -3px 0 rgba(4, 16, 17, .28); }
+.incident-task[data-complete="true"] .incident-task-heading span,
+.incident-task[data-complete="true"] .incident-task-heading b { color: #8ce6de; }
+.incident-task[data-complete="true"] .incident-task-progress span { background: #70ddd4; box-shadow: 0 0 10px rgba(112, 221, 212, .58); }
 .part-card[data-locked="true"] .part-preview { filter: grayscale(.85) brightness(.72); }
 .part-card[data-locked="true"]::after { content: "LOCKED"; position: absolute; top: 10px; right: 10px; z-index: 2; padding: 3px 4px; border-radius: 4px; color: #9fb2ba; background: rgba(4,14,23,.84); font: 900 7px "Courier New", monospace; letter-spacing: .08em; }
 .selected-specs { grid-template-columns: repeat(3, 1fr); }

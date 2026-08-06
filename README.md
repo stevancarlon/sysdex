@@ -34,7 +34,8 @@ Successful certification unlocks the next operation and persists the best score 
 - Select a machine to learn how its physical metaphor maps to the software component.
 - Start or abort a production drill with the control-desk button or `T`, then watch requests travel through automatically routed data cables.
 - Tune throughput, p95 latency, and errors against each phase's service-level objectives.
-- Respond to incidents with the phase-specific manual mitigation or a faster automated response unlocked by the configured runbook.
+- Respond to incidents by changing the live topology: add the affected replica, cache node, geographic partition, or CDN edge while traffic is running. The drill supplies an emergency budget equal to the required machine cost.
+- Configure resilience policies before the drill to make matching incidents recover automatically; runbook choices are operational behavior, not buttons pressed after failure.
 - Observe failed and recovering machines in the scene, labels, live capacity, latency, errors, and bottleneck diagnosis.
 - Remove selected machines for a full refund using the component card or `Delete`.
 - Rotate the isometric laboratory by left-dragging empty floor space. Right-drag, middle-drag, `Q` / `E`, and the on-screen controls remain available as alternatives.
