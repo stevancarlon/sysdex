@@ -11,7 +11,8 @@ import {
   type ConfigId,
 } from "./campaign";
 import { type SimulationEdgeMode, type SimulationGraph } from "./simulation/graph.ts";
-import { evaluateSocialRedirectGraph, socialRedirectCapacity } from "./simulation/socialRedirects.ts";
+import { coreComponentCapacity, evaluateCoreServiceGraph } from "./simulation/coreService.ts";
+import { evaluateSocialRedirectGraph } from "./simulation/socialRedirects.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -2245,6 +2246,7 @@ function selectNode(node: PlacedComponent | null) {
 function updateMachineAnimations(delta: number) {
   const demand = isRunning ? Math.max(1, currentDemand) : targetRps;
   const metrics = calculateMetrics(demand);
+  const disconnectedNodeIds = "topology" in metrics ? new Set(metrics.topology.disconnectedNodeIds) : null;
   const activity = isRunning ? THREE.MathUtils.clamp(currentDemand / targetRps, 0.2, 1) : 0.08;
   const motionDelta = prefersReducedMotion ? 0 : delta;
   const motionElapsed = prefersReducedMotion ? 0 : elapsed;
@@ -2262,6 +2264,7 @@ function updateMachineAnimations(delta: number) {
     const hovered = node === hoveredNode;
     const failed = node.state === "failed";
     const degraded = node.state === "degraded";
+    const disconnected = disconnectedNodeIds?.has(String(node.id)) ?? false;
     const overloaded = isRunning && metrics.bottleneckKind === node.kind && currentDemand > metrics.capacity;
     const targetScale = (selected ? 1.025 : hovered ? 0.985 : 0.94) * (failed ? 0.9 : degraded ? 0.96 : 1);
     const desiredLift = node === draggedNode ? 0.2 : 0;
@@ -2277,8 +2280,8 @@ function updateMachineAnimations(delta: number) {
       : THREE.MathUtils.lerp(group.rotation.z, failed ? -0.035 : 0, Math.min(1, delta * 8));
 
     if (selected) {
-      selectedState.textContent = failed ? "Failed" : degraded ? "Recovering" : "Healthy";
-      selectedState.dataset.state = node.state;
+      selectedState.textContent = failed ? "Failed" : degraded ? "Recovering" : disconnected ? "Disconnected" : "Healthy";
+      selectedState.dataset.state = failed ? "failed" : degraded ? "degraded" : disconnected ? "disconnected" : "healthy";
     }
 
     group.traverse((object) => {
@@ -2681,8 +2684,12 @@ function captureAutomaticTopology() {
   }
 }
 
+function manualWiringAvailable() {
+  return currentPhaseIndex > 0 && (currentPhase.workload === "general" || currentPhase.workload === "analytics");
+}
+
 function syncWiringUi() {
-  const available = currentPhaseIndex === 1;
+  const available = manualWiringAvailable();
   viewControls.dataset.wiring = String(available);
   wiringButton.hidden = !available;
   wiringButton.disabled = !available;
@@ -2695,7 +2702,7 @@ function syncWiringUi() {
   const shortcut = wiringButton.querySelector<HTMLElement>("small")!;
   if (!available) {
     wiringButtonLabel.textContent = "Auto cables";
-    shortcut.textContent = "Manual in phase 02";
+    shortcut.textContent = "Auto-routed phase";
     partsHint.innerHTML = "<b>Click a part, then click a free floor tile.</b> Cables connect automatically. Drag machines to move them.";
   } else if (topologyMode === "automatic") {
     wiringButtonLabel.textContent = "Take cable control";
@@ -2730,8 +2737,8 @@ function resetTopologyEditor() {
 }
 
 function setWiringEditing(active: boolean) {
-  if (currentPhaseIndex !== 1) {
-    showToast("Manual cable routing is available in Phase 02 while its graph simulation is active.");
+  if (!manualWiringAvailable()) {
+    showToast("Manual cable routing appears in operations backed by the directed-graph simulator.");
     return;
   }
   if (active && topologyMode === "automatic") {
@@ -2828,17 +2835,13 @@ function removeAuthoredConnection(connection: Connection) {
   showToast(`${from ? contextualComponentLabel(from.kind) : "Source"} → ${to ? contextualComponentLabel(to.kind) : "destination"} cable removed.`);
 }
 
-function evaluateAnalyticsMetrics(
-  demand: number,
-  counts: Record<ComponentKind, number>,
-  effectiveCounts: Record<ComponentKind, number>,
+function buildLiveSimulationGraph(
   incidentOpen: boolean,
-  recoveryProgress: number,
   incidentCapacityMultiplier: number,
-) {
-  const simulationGraph: SimulationGraph = {
+): SimulationGraph {
+  return {
     nodes: nodes.map((node) => {
-      const baseCapacity = socialRedirectCapacity[node.kind as keyof typeof socialRedirectCapacity] ?? 0;
+      const baseCapacity = coreComponentCapacity[node.kind as keyof typeof coreComponentCapacity] ?? 0;
       const configCapacityMultiplier = node.kind === "api" && activeConfigs.has("autoscaling")
         ? 1.35
         : node.kind === "postgres" && activeConfigs.has("walTuning")
@@ -2859,7 +2862,84 @@ function evaluateAnalyticsMetrics(
       mode: connection.mode,
     })),
   };
-  const topology = evaluateSocialRedirectGraph(simulationGraph, {
+}
+
+function evaluateCoreMetrics(
+  demand: number,
+  counts: Record<ComponentKind, number>,
+  effectiveCounts: Record<ComponentKind, number>,
+  incidentOpen: boolean,
+  recoveryProgress: number,
+  incidentCapacityMultiplier: number,
+) {
+  const topology = evaluateCoreServiceGraph(buildLiveSimulationGraph(incidentOpen, incidentCapacityMultiplier), {
+    demand,
+    latencySlo,
+    errorSlo,
+  });
+  const incidentLatency = incidentOpen
+    ? currentPhase.incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
+    : 0;
+  const incidentErrors = incidentOpen
+    ? currentPhase.incident.errorPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.32 : 1)
+    : 0;
+  const latency = topology.hasResponsePath
+    ? Math.round(Math.max(30, topology.latency - (activeConfigs.has("walTuning") ? 8 : 0) + incidentLatency))
+    : 0;
+  const errors = topology.errors + incidentErrors;
+  const contractSatisfied = topology.hasResponsePath
+    && topology.capacity >= demand
+    && latency <= latencySlo
+    && errors < errorSlo;
+  let bottleneckKind = topology.bottleneckKind as ComponentKind | null;
+  let diagnosis = "Every connected request-path tier is inside its operating envelope.";
+
+  if (!topology.hasResponsePath) {
+    bottleneckKind = currentPhase.incident.affectedKind ?? topology.missingKinds[0] as ComponentKind | null;
+    diagnosis = incidentOpen
+      ? `${currentPhase.incident.title}: the failure cut the only healthy route from ingress to durable data.`
+      : "No complete directed route connects Load Balancer, API Server, and PostgreSQL.";
+  } else if (incidentOpen) {
+    bottleneckKind = currentPhase.incident.affectedKind;
+    diagnosis = `${currentPhase.incident.title} in progress — ${currentPhase.incident.operatorPrompt}`;
+  } else if (topology.capacity < demand) {
+    const connectedCapacity = Math.round(topology.capacity).toLocaleString("en-US");
+    if (bottleneckKind === "loadBalancer") diagnosis = `Connected ingress capacity saturates at ${connectedCapacity} r/s.`;
+    else if (bottleneckKind === "api") diagnosis = `Only connected API replicas contribute; the request tier saturates at ${connectedCapacity} r/s.`;
+    else if (bottleneckKind === "redis") diagnosis = `The reachable cache tier saturates at ${connectedCapacity} reads/s.`;
+    else diagnosis = `The connected durable data path saturates at ${connectedCapacity} reads/s.`;
+  } else if (latency > latencySlo) {
+    bottleneckKind = topology.cacheOperational ? bottleneckKind : "redis";
+    diagnosis = topology.cacheOperational
+      ? `Queueing on the connected path pushes p95 to ${latency} ms, above the ${latencySlo} ms SLO.`
+      : `Every read reaches PostgreSQL on disk; the connected path reaches p95 ${latency} ms.`;
+  } else {
+    bottleneckKind = null;
+  }
+
+  return {
+    capacity: topology.capacity,
+    latency,
+    errors,
+    hasCore: topology.hasResponsePath,
+    bottleneckKind,
+    diagnosis,
+    counts,
+    effectiveCounts,
+    topology,
+    contractSatisfied,
+  };
+}
+
+function evaluateAnalyticsMetrics(
+  demand: number,
+  counts: Record<ComponentKind, number>,
+  effectiveCounts: Record<ComponentKind, number>,
+  incidentOpen: boolean,
+  recoveryProgress: number,
+  incidentCapacityMultiplier: number,
+) {
+  const topology = evaluateSocialRedirectGraph(buildLiveSimulationGraph(incidentOpen, incidentCapacityMultiplier), {
     demand,
     latencySlo,
     errorSlo,
@@ -2872,6 +2952,11 @@ function evaluateAnalyticsMetrics(
     : 0;
   const latency = topology.hasResponsePath ? Math.round(topology.latency + incidentLatency) : 0;
   const errors = topology.errors + incidentErrors;
+  const contractSatisfied = topology.hasResponsePath
+    && topology.capacity >= demand
+    && latency <= latencySlo
+    && errors < errorSlo
+    && topology.backgroundHealthy;
   let bottleneckKind = topology.bottleneckKind as ComponentKind | null;
   let diagnosis = "Every required request and event path is inside its operating envelope.";
 
@@ -2924,6 +3009,7 @@ function evaluateAnalyticsMetrics(
     counts,
     effectiveCounts,
     topology,
+    contractSatisfied,
   };
 }
 
@@ -2952,6 +3038,16 @@ function calculateMetrics(demand = targetRps) {
   }
   if (currentPhase.workload === "analytics") {
     return evaluateAnalyticsMetrics(
+      demand,
+      counts,
+      effectiveCounts,
+      incidentOpen,
+      recoveryProgress,
+      incidentCapacityMultiplier,
+    );
+  }
+  if (currentPhase.workload === "general") {
+    return evaluateCoreMetrics(
       demand,
       counts,
       effectiveCounts,
@@ -3189,8 +3285,10 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
       const missing = (["loadBalancer", "api", "postgres"] as ComponentKind[])
         .filter((kind) => metrics.counts[kind] === 0)
         .map((kind) => componentDefinitions[kind].label);
-      title = "The request path is incomplete";
-      description = `Missing required tier${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}.`;
+      title = missing.length > 0 ? "The request path is incomplete" : "The installed tiers are disconnected";
+      description = missing.length > 0
+        ? `Missing required tier${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}.`
+        : `${metrics.diagnosis} Press W to inspect or repair the directed cables.`;
     } else if (metrics.capacity < targetRps) {
       const tierName = metrics.bottleneckKind === "loadBalancer"
         ? "Ingress"
@@ -3286,7 +3384,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
     runButton.dataset.ready = "false";
     runButton.textContent = "Abort traffic test · T";
   } else {
-    const contractReady = !("topology" in metrics) || metrics.topology.meetsContract;
+    const contractReady = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
     const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo && contractReady;
     runButton.disabled = !metrics.hasCore;
     runButton.dataset.ready = String(previewReady);
@@ -3331,7 +3429,7 @@ function updateTelemetry() {
   const capacityMet = metrics.hasCore && metrics.capacity >= targetRps;
   const latencyMet = metrics.hasCore && metrics.latency <= latencySlo;
   const errorsMet = isRunning && currentDemand >= targetRps && metrics.errors < errorSlo;
-  const analyticsTopology = "topology" in metrics ? metrics.topology : null;
+  const analyticsTopology = currentPhase.workload === "analytics" && "topology" in metrics ? metrics.topology : null;
   updateMissionGuide(metrics);
   objectiveThroughput.dataset.met = String(capacityMet);
   objectiveLatency.dataset.met = String(latencyMet);
@@ -3357,9 +3455,21 @@ function updateTelemetry() {
 
   bottleneckElement.textContent = metrics.diagnosis;
   bottleneckElement.dataset.state = metrics.bottleneckKind === null ? "healthy" : "warning";
+  const disconnectedNodeIds = "topology" in metrics ? new Set(metrics.topology.disconnectedNodeIds) : null;
   for (const node of nodes) {
-    node.label.dataset.status = node.state === "failed" ? "failed" : node.state === "degraded" ? "degraded" : node.kind === metrics.bottleneckKind ? "hot" : "normal";
-    const stateLabel = node.state === "failed" ? "OFFLINE" : node.state === "degraded" ? "RECOVERING" : contextualComponentRole(node.kind);
+    const disconnected = disconnectedNodeIds?.has(String(node.id)) ?? false;
+    node.label.dataset.status = node.state === "failed"
+      ? "failed"
+      : node.state === "degraded"
+        ? "degraded"
+        : disconnected
+          ? "disconnected"
+          : node.kind === metrics.bottleneckKind ? "hot" : "normal";
+    const stateLabel = node.state === "failed"
+      ? "OFFLINE"
+      : node.state === "degraded"
+        ? "RECOVERING"
+        : disconnected ? "DISCONNECTED" : contextualComponentRole(node.kind);
     node.label.querySelector("small")!.textContent = stateLabel;
   }
   document.querySelectorAll<HTMLButtonElement>(".part-card").forEach((button) => {
@@ -3415,7 +3525,7 @@ function checkTopologyIncidentResponse() {
   incidentTaskCount.textContent = `${installedCount} / ${requiredCount} installed`;
   incidentTaskProgress.style.scale = `${Math.min(1, installedCount / Math.max(1, requiredCount))} 1`;
   if (installedCount < requiredCount) return;
-  if (currentPhaseIndex === 1 && topologyMode === "manual" && !calculateMetrics(Math.max(1, currentDemand)).hasCore) {
+  if (topologyMode === "manual" && !calculateMetrics(Math.max(1, currentDemand)).hasCore) {
     incidentTaskCount.textContent = "Installed · not routed";
     incidentTaskProgress.style.scale = "0.82 1";
     incidentTaskTitle.textContent = `Wire ${definition.label} into the live path`;
@@ -3712,7 +3822,7 @@ function updateTest(delta: number) {
   }
 
   testPhase = "holding";
-  const contractHealthy = !("topology" in metrics) || metrics.topology.meetsContract;
+  const contractHealthy = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
   const healthy = incidentMode === "resolved"
     && metrics.capacity >= targetRps
     && metrics.latency <= latencySlo
@@ -4308,6 +4418,15 @@ void Promise.all(machineTextureLoads).then(() => {
   requestAnimationFrame(renderPartPreviews);
 });
 
+function placeDemoMachinesUntil(kind: ComponentKind, requiredCount: number) {
+  for (let row = 0; row < rows && nodes.filter((node) => node.kind === kind).length < requiredCount; row += 1) {
+    for (let col = 0; col < columns && nodes.filter((node) => node.kind === kind).length < requiredCount; col += 1) {
+      const grid = { col, row };
+      if (!isOccupied(grid)) placeComponent(kind, grid, true);
+    }
+  }
+}
+
 const searchParams = new URLSearchParams(window.location.search);
 const requestedPhase = Number(searchParams.get("phase"));
 if (Number.isInteger(requestedPhase) && requestedPhase >= 0 && requestedPhase < campaignPhases.length) {
@@ -4366,8 +4485,16 @@ if (demoMode !== null) {
     if (!releaseDemo && (!diagnosisDemo || demoMode === "diagnosis-solved")) placeComponent("redis", { col: 5, row: 2 });
     placeComponent("postgres", { col: 7, row: 3 });
     if (diagnosisDemo) placeComponent("postgres", { col: 7, row: 5 });
-    if (!releaseDemo) placeComponent("queue", { col: 5, row: 5 });
-    if (!releaseDemo) placeComponent("worker", { col: 5, row: 4 });
+    const coreCertificationDemo = demoMode === "certified" && currentPhase.workload === "general";
+    if (!releaseDemo && !coreCertificationDemo) placeComponent("queue", { col: 5, row: 5 });
+    if (!releaseDemo && !coreCertificationDemo) placeComponent("worker", { col: 5, row: 4 });
+    if (coreCertificationDemo) {
+      const capacityTarget = Math.ceil(targetRps * (latencySlo <= 75 ? 1.085 : 1));
+      placeDemoMachinesUntil("loadBalancer", Math.ceil(capacityTarget / coreComponentCapacity.loadBalancer));
+      placeDemoMachinesUntil("api", Math.ceil(capacityTarget / coreComponentCapacity.api));
+      placeDemoMachinesUntil("redis", Math.ceil(capacityTarget / coreComponentCapacity.redis));
+      placeDemoMachinesUntil("postgres", Math.ceil(capacityTarget / (coreComponentCapacity.postgres * 3.125)));
+    }
     if (demoMode === "config") openConfigScreen();
     else if (!diagnosisDemo) runButton.click();
     if (demoMode === "packets") {
@@ -4409,4 +4536,7 @@ if (demoMode !== null) {
   }
 } else {
   openCampaignScreen();
+}
+if (searchParams.get("wiring") === "manual" && manualWiringAvailable() && topologyMode === "automatic") {
+  setWiringEditing(true);
 }

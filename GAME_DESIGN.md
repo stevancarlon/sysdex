@@ -183,7 +183,7 @@ These should emerge from shared rules, not bespoke incident scripts.
 
 ## Migration plan
 
-Implementation checkpoint: Phase 2 now runs through the UI-independent directed-graph evaluator in `src/simulation/`. Request capacity only credits machines on a complete response path; synchronous calls, asynchronous queues, consumers, commits, failures, event backlog, and delivery lag are evaluated from edge semantics. Phase 2 also offers an optional manual wiring mode with directed, compatible ports and recoverable auto-routing. The remaining phases still use the transitional count model while the same engine is expanded.
+Implementation checkpoint: Phase 1 and the core-service operations in Phases 2–5 now run through the UI-independent directed-graph evaluator in `src/simulation/`. Request capacity only credits machines on a complete response path; caches accelerate only paths that traverse them; replicated standbys remain operationally meaningful without pretending to serve reads; and synchronous calls, asynchronous queues, consumers, commits, failures, event backlog, and delivery lag come from edge semantics. Graph-driven post-tutorial phases offer optional manual wiring with directed compatible ports and recoverable auto-routing. The matching, streaming, and dispatch phases still use the transitional count model while the same engine is expanded.
 
 ### 1. Extract the domain model
 

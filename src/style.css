@@ -2577,10 +2577,13 @@ button,
 .selected-specs { grid-template-columns: repeat(3, 1fr); }
 #selected-state[data-state="failed"] { color: #ef8798; }
 #selected-state[data-state="degraded"] { color: #edca83; }
+#selected-state[data-state="disconnected"] { color: #d7b881; }
 .component-label[data-status="failed"] { color: #ffe7eb; background: rgba(94, 22, 43, .96); box-shadow: 0 0 0 1px rgba(240,95,112,.68), 0 0 18px rgba(197,52,78,.36); }
 .component-label[data-status="failed"] small { color: #ff8ea0; }
 .component-label[data-status="degraded"] { color: #fff3d9; background: rgba(78, 56, 22, .96); box-shadow: 0 0 0 1px rgba(237,190,93,.54), 0 4px 12px rgba(31,19,4,.5); }
 .component-label[data-status="degraded"] small { color: #efd18b; }
+.component-label[data-status="disconnected"] { color: #e4d3b4; background: rgba(52, 45, 35, .94); box-shadow: 0 0 0 1px rgba(207, 174, 112, .38), 0 4px 12px rgba(20, 16, 8, .42); }
+.component-label[data-status="disconnected"] small { color: #d3ab67; }
 
 @media (max-width: 1180px) {
   .campaign-dock {

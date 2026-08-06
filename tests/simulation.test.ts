@@ -4,6 +4,7 @@ import {
   socialRedirectCapacity,
   evaluateSocialRedirectGraph,
 } from "../src/simulation/socialRedirects.ts";
+import { evaluateCoreServiceGraph } from "../src/simulation/coreService.ts";
 import type {
   SimulationEdge,
   SimulationEdgeMode,
@@ -156,4 +157,73 @@ test("failed and cyclic machines cannot create phantom paths", () => {
   assert.equal(result.hasResponsePath, false);
   assert.deepEqual(result.missingKinds, ["loadBalancer", "api", "postgres"]);
   assert.ok(result.disconnectedNodeIds.includes("orphan-a"));
+});
+
+test("the first release scales only through connected API replicas", () => {
+  const graph: SimulationGraph = {
+    nodes: [
+      node("lb", "loadBalancer"),
+      node("api-1", "api"),
+      node("api-2", "api"),
+      node("database", "postgres"),
+    ],
+    edges: [
+      edge("lb", "api-1", "request"),
+      edge("api-1", "database", "request"),
+    ],
+  };
+  const release = { demand: 500, latencySlo: 160, errorSlo: 2 };
+
+  const disconnected = evaluateCoreServiceGraph(graph, release);
+  assert.equal(disconnected.capacity, 300);
+  assert.ok(disconnected.disconnectedNodeIds.includes("api-2"));
+
+  graph.edges.push(
+    edge("lb", "api-2", "request"),
+    edge("api-2", "database", "request"),
+  );
+  const connected = evaluateCoreServiceGraph(graph, release);
+  assert.equal(connected.capacity, 560);
+  assert.equal(connected.latency, 155);
+  assert.equal(connected.meetsContract, true);
+});
+
+test("a cache accelerates storage only when it lies on the response path", () => {
+  const graph = inheritedGraph();
+  graph.nodes = graph.nodes.filter((candidate) => candidate.kind !== "worker");
+  graph.edges = graph.edges.filter((candidate) => candidate.from !== "analytics-1" && candidate.to !== "analytics-1");
+  const coreOptions = { demand: 1_200, latencySlo: 115, errorSlo: 1.5 };
+
+  const cached = evaluateCoreServiceGraph(graph, coreOptions);
+  assert.equal(cached.cacheOperational, true);
+  assert.equal(cached.capacity, 1_200);
+  assert.equal(cached.latency, 84);
+
+  graph.edges = graph.edges.filter((candidate) => candidate.from !== "cache" && candidate.to !== "cache");
+  graph.edges.push(...["api-1", "api-2", "api-3", "api-4"].map((id) => edge(id, "database", "request")));
+  const bypassed = evaluateCoreServiceGraph(graph, coreOptions);
+  assert.equal(bypassed.cacheOperational, false);
+  assert.equal(bypassed.capacity, 560);
+  assert.ok(bypassed.disconnectedNodeIds.includes("cache"));
+});
+
+test("a replicated standby is functional without pretending to serve reads", () => {
+  const graph: SimulationGraph = {
+    nodes: [
+      node("lb", "loadBalancer"),
+      node("api", "api"),
+      node("primary", "postgres"),
+      node("standby", "postgres"),
+    ],
+    edges: [
+      edge("lb", "api", "request"),
+      edge("api", "primary", "request"),
+      edge("primary", "standby", "replicate"),
+    ],
+  };
+
+  const result = evaluateCoreServiceGraph(graph, { demand: 300, latencySlo: 220, errorSlo: 2 });
+
+  assert.equal(result.capacity, 300);
+  assert.ok(!result.disconnectedNodeIds.includes("standby"));
 });

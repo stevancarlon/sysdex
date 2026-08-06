@@ -59,6 +59,7 @@ export type ServiceContract = {
   loadPenaltyMs?: number;
   replicaLatencyBenefitMs?: number;
   maximumReplicaLatencyBenefitMs?: number;
+  replicaKind?: string;
 };
 
 export type BackgroundMode = "none" | "missing" | "synchronous" | "asynchronous";
@@ -245,6 +246,15 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
     }
   }
 
+  const replicationAdjacency = new Map<string, string[]>();
+  for (const edge of activeEdges.filter((candidate) => candidate.mode === "replicate")) {
+    replicationAdjacency.set(edge.from, [...(replicationAdjacency.get(edge.from) ?? []), edge.to]);
+    replicationAdjacency.set(edge.to, [...(replicationAdjacency.get(edge.to) ?? []), edge.from]);
+  }
+  for (const id of reachableFrom(functionalNodeIds, replicationAdjacency)) {
+    functionalNodeIds.add(id);
+  }
+
   if (contract.background) tierCapacities.push({
     kind: backgroundMode === "asynchronous" ? contract.background.queueKind : contract.background.processorKind,
     capacity: backgroundCapacity,
@@ -296,9 +306,9 @@ export function evaluateServiceGraph(graph: SimulationGraph, contract: ServiceCo
         latency -= contract.background.asynchronousLatencyBenefitMs;
       }
     }
-    const apiKind = contract.background?.sourceKind;
-    const replicaCount = apiKind
-      ? responseNodes.filter((node) => node.kind === apiKind).reduce((total, node) => total + stateMultiplier(node.state), 0)
+    const replicaKind = contract.replicaKind ?? contract.background?.sourceKind;
+    const replicaCount = replicaKind
+      ? responseNodes.filter((node) => node.kind === replicaKind).reduce((total, node) => total + stateMultiplier(node.state), 0)
       : 1;
     latency -= Math.min(
       contract.maximumReplicaLatencyBenefitMs ?? 0,
