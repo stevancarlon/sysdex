@@ -30,7 +30,7 @@ Successful certification unlocks the next operation and persists the best score 
 
 ## Free Lab
 
-Creative mode removes campaign progression and prescribed incidents. Choose any of five workload families, set 500–10,000 requests per second, and author the p95, error, delivery, and freshness contracts yourself. Every machine and runbook is unlocked, budget is unlimited, and traffic runs until you stop it.
+Creative mode removes campaign progression and prescribed incidents. Choose any of five workload families, set a 500–10,000 requests-per-second peak, select a steady, wave, or burst trace, provide its deterministic replay seed, and author the p95, error, delivery, and freshness contracts yourself. Every machine and runbook is unlocked, budget is unlimited, and traffic runs until you stop it.
 
 Select any installed machine to take it offline or restore it while traffic is live. Broken and incomplete graphs remain runnable, so you can observe total outages, partial degradation, synchronous fallbacks, stale data, and successful failover. Custom contracts, manual cables, runbooks, and offline machines survive local saves and compact share links.
 
@@ -64,7 +64,7 @@ Use `?demo=analytics-inherited`, `?demo=analytics-failed`,
 `?demo=analytics-queue`, or `?demo=analytics-scale` to compare the Phase 2
 bottleneck, its diagnostic result, and two valid designs.
 Add `&angle=1.8` to render a deterministic rotated camera angle.
-Use `?lab=dispatch&rps=3000&demo=sandbox-certified` for a deterministic Free
+Use `?lab=dispatch&rps=3000&shape=burst&seed=42&demo=sandbox-certified` for a deterministic Free
 Lab workload, or replace the demo with `sandbox-failure` to render a selected
 offline machine. Shared sandbox URLs also carry `p95`, `err`, `delivery`, and
 `lag` contract parameters.

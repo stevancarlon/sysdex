@@ -2853,6 +2853,32 @@ button,
 .sandbox-demand strong { color: #8be2e6; font: 900 13px "Courier New", monospace; font-variant-numeric: tabular-nums; }
 .sandbox-demand input { width: 100%; margin-top: 10px; accent-color: #69d8eb; cursor: ew-resize; }
 
+.sandbox-trace-row { display: grid; grid-template-columns: minmax(0, 1fr) 105px; gap: 7px; margin-top: 7px; }
+.sandbox-patterns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sandbox-patterns button,
+.sandbox-seed {
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 9px;
+  color: #8fa9b2;
+  background: rgba(5, 18, 30, .68);
+  box-shadow: inset 0 0 0 1px rgba(195, 225, 235, .1), inset 0 -2px 0 rgba(1, 8, 15, .25);
+}
+.sandbox-patterns button { cursor: pointer; transition: scale 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out; }
+.sandbox-patterns button:hover,
+.sandbox-patterns button[aria-checked="true"] { color: #e2f3f5; background: #27465c; box-shadow: inset 0 0 0 1px rgba(105, 220, 234, .4), inset 0 -2px 0 rgba(2, 11, 20, .28); }
+.sandbox-patterns button:active { scale: .96; }
+.sandbox-patterns span,
+.sandbox-patterns small,
+.sandbox-seed small { display: block; }
+.sandbox-patterns span { font: 800 10px var(--font-ui); }
+.sandbox-patterns small,
+.sandbox-seed small { margin-top: 2px; color: #78929c; font: 900 7px "Courier New", monospace; text-transform: uppercase; }
+.sandbox-seed input { width: 100%; margin-top: 4px; padding: 0; border: 0; outline: 0; color: #8be2e6; background: transparent; font: 900 12px "Courier New", monospace; font-variant-numeric: tabular-nums; }
+.sandbox-seed:focus-within { box-shadow: inset 0 0 0 1px rgba(105, 220, 234, .42), inset 0 -2px 0 rgba(2, 11, 20, .28); }
+
 .sandbox-contract-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; }
 .sandbox-contract-heading > span { color: #819aa4; font: 900 8px "Courier New", monospace; letter-spacing: .08em; text-transform: uppercase; }
 .sandbox-contract-heading button { padding: 5px 7px; border: 0; border-radius: 6px; color: #93b3bd; background: rgba(24, 48, 68, .78); font: 900 7px "Courier New", monospace; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }

@@ -29,6 +29,7 @@ import {
   maximumSharedBlueprintLength,
   type SharedBlueprintV1,
 } from "../src/simulation/blueprintCodec.ts";
+import { workloadDemandAt } from "../src/simulation/workloadTrace.ts";
 
 const options = { demand: 1_200, latencySlo: 115, errorSlo: 1.5 };
 
@@ -496,4 +497,17 @@ test("shared blueprints round-trip compact manual graph tuples", () => {
   assert.deepEqual(decodeSharedBlueprint(encoded), payload);
   assert.equal(decodeSharedBlueprint("not+url/safe"), null);
   assert.equal(decodeSharedBlueprint("a".repeat(maximumSharedBlueprintLength + 1)), null);
+});
+
+test("seeded workload traces replay the same demand timeline", () => {
+  const timestamps = Array.from({ length: 10 }, (_, index) => index * 2);
+  const firstRun = timestamps.map((seconds) => workloadDemandAt("burst", 1_000, 7, seconds));
+  const replay = timestamps.map((seconds) => workloadDemandAt("burst", 1_000, 7, seconds));
+  const differentSeed = timestamps.map((seconds) => workloadDemandAt("burst", 1_000, 8, seconds));
+
+  assert.deepEqual(replay, firstRun);
+  assert.notDeepEqual(differentSeed, firstRun);
+  assert.equal(workloadDemandAt("burst", 1_000, 7, 2), 1_000);
+  assert.equal(workloadDemandAt("steady", 1_000, 999, 200), 1_000);
+  assert.ok(timestamps.every((seconds) => workloadDemandAt("wave", 1_000, 42, seconds) <= 1_000));
 });

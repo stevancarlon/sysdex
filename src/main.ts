@@ -35,6 +35,7 @@ import {
   encodeSharedBlueprint,
   type SharedBlueprintV1,
 } from "./simulation/blueprintCodec.ts";
+import { workloadDemandAt, type WorkloadTrafficPattern } from "./simulation/workloadTrace.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -293,6 +294,14 @@ type SandboxContract = {
   maxLagSeconds: number | null;
 };
 
+type SandboxTrafficPattern = WorkloadTrafficPattern;
+
+const sandboxTrafficPatterns: Record<SandboxTrafficPattern, { name: string; description: string }> = {
+  steady: { name: "Steady", description: "Constant peak load" },
+  wave: { name: "Wave", description: "Smooth demand cycle" },
+  burst: { name: "Burst", description: "Seeded traffic spikes" },
+};
+
 function defaultSandboxContract(workload: WorkloadKind): SandboxContract {
   const preset = sandboxPresets[workload];
   return {
@@ -355,6 +364,8 @@ let isSandboxMode = false;
 let sandboxWorkload: WorkloadKind = "general";
 let sandboxTargetRps = 3_000;
 let sandboxContract = defaultSandboxContract(sandboxWorkload);
+let sandboxTrafficPattern: SandboxTrafficPattern = "steady";
+let sandboxTraceSeed = 42;
 let totalBudget = currentPhase.budget;
 let targetRps = currentPhase.targetRps;
 let latencySlo = currentPhase.latencySlo;
@@ -439,8 +450,16 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <button type="button" role="radio" data-workload="dispatch" aria-checked="false"><span>Dispatch</span><small>Geo + locations</small></button>
         </div>
         <div class="sandbox-demand">
-          <div><span>Traffic contract</span><strong id="sandbox-demand-value">3,000 r/s</strong></div>
+          <div><span>Peak traffic contract</span><strong id="sandbox-demand-value">3,000 r/s</strong></div>
           <input id="sandbox-demand-input" type="range" min="500" max="10000" step="500" value="3000" aria-label="Sandbox traffic target" />
+        </div>
+        <div class="sandbox-trace-row">
+          <div class="sandbox-patterns" id="sandbox-patterns" role="radiogroup" aria-label="Traffic trace shape">
+            <button type="button" role="radio" data-pattern="steady" aria-checked="true"><span>Steady</span><small>Constant peak</small></button>
+            <button type="button" role="radio" data-pattern="wave" aria-checked="false"><span>Wave</span><small>Smooth cycle</small></button>
+            <button type="button" role="radio" data-pattern="burst" aria-checked="false"><span>Burst</span><small>Seeded spikes</small></button>
+          </div>
+          <label class="sandbox-seed"><small>Replay seed</small><input id="sandbox-seed-input" type="number" min="1" max="9999" step="1" value="42" aria-label="Deterministic workload replay seed" /></label>
         </div>
         <div class="sandbox-contract-heading">
           <span>Define the service contract</span>
@@ -898,6 +917,8 @@ const closeSandboxButton = document.querySelector<HTMLButtonElement>("#close-san
 const sandboxWorkloads = document.querySelector<HTMLElement>("#sandbox-workloads")!;
 const sandboxDemandInput = document.querySelector<HTMLInputElement>("#sandbox-demand-input")!;
 const sandboxDemandValue = document.querySelector<HTMLElement>("#sandbox-demand-value")!;
+const sandboxPatterns = document.querySelector<HTMLElement>("#sandbox-patterns")!;
+const sandboxSeedInput = document.querySelector<HTMLInputElement>("#sandbox-seed-input")!;
 const sandboxLatencyContract = document.querySelector<HTMLInputElement>("#sandbox-latency-contract")!;
 const sandboxErrorContract = document.querySelector<HTMLInputElement>("#sandbox-error-contract")!;
 const sandboxDeliveryContract = document.querySelector<HTMLElement>("#sandbox-delivery-contract")!;
@@ -1477,6 +1498,10 @@ function sandboxContractFromSearch(params: URLSearchParams, workload: WorkloadKi
   });
 }
 
+function normalizeSandboxTraceSeed(value: number) {
+  return Math.round(THREE.MathUtils.clamp(Number.isFinite(value) ? value : 42, 1, 9_999));
+}
+
 function updateSandboxSetupUi() {
   const preset = sandboxPresets[sandboxWorkload];
   sandboxWorkloads.querySelectorAll<HTMLButtonElement>("button[data-workload]").forEach((button) => {
@@ -1484,6 +1509,10 @@ function updateSandboxSetupUi() {
   });
   sandboxDemandInput.value = String(sandboxTargetRps);
   sandboxDemandValue.textContent = `${sandboxTargetRps.toLocaleString("en-US")} r/s`;
+  sandboxPatterns.querySelectorAll<HTMLButtonElement>("button[data-pattern]").forEach((button) => {
+    button.setAttribute("aria-checked", String(button.dataset.pattern === sandboxTrafficPattern));
+  });
+  sandboxSeedInput.value = String(sandboxTraceSeed);
   sandboxLatencyContract.value = String(sandboxContract.latencySlo);
   sandboxErrorContract.value = String(sandboxContract.errorSlo);
   sandboxDeliveryContract.hidden = !preset.backgroundSlo;
@@ -1516,7 +1545,13 @@ function closeSandboxSetup() {
   sandboxOverlay.setAttribute("aria-hidden", "true");
 }
 
-function beginSandboxSession(workload: WorkloadKind, demand: number, contract = sandboxContract) {
+function beginSandboxSession(
+  workload: WorkloadKind,
+  demand: number,
+  contract = sandboxContract,
+  trafficPattern = sandboxTrafficPattern,
+  traceSeed = sandboxTraceSeed,
+) {
   stopTest(true);
   hideResult();
   resetTopologyEditor();
@@ -1526,6 +1561,8 @@ function beginSandboxSession(workload: WorkloadKind, demand: number, contract = 
   sandboxWorkload = workload;
   sandboxTargetRps = Math.round(THREE.MathUtils.clamp(demand, 500, 10_000) / 500) * 500;
   sandboxContract = normalizeSandboxContract(sandboxWorkload, contract);
+  sandboxTrafficPattern = trafficPattern;
+  sandboxTraceSeed = normalizeSandboxTraceSeed(traceSeed);
   isSandboxMode = true;
   applyPhaseParameters(createSandboxPhase(sandboxWorkload, sandboxTargetRps, sandboxContract), campaignPhases.length);
   incidentTriggered = false;
@@ -1537,7 +1574,7 @@ function beginSandboxSession(workload: WorkloadKind, demand: number, contract = 
   updateMissionContent();
   updateUi();
   updateTelemetry();
-  showToast(`Free Lab ready: ${sandboxPresets[workload].name} at ${sandboxTargetRps.toLocaleString("en-US")} r/s. Build, wire, run, and change anything.`);
+  showToast(`Free Lab ready: ${sandboxPresets[workload].name} · ${sandboxTrafficPatterns[sandboxTrafficPattern].name.toLowerCase()} trace · peak ${sandboxTargetRps.toLocaleString("en-US")} r/s · seed ${sandboxTraceSeed}.`);
 }
 
 function openCampaignScreen() {
@@ -2869,12 +2906,16 @@ function clearLaboratory() {
   rebuildConnections();
 }
 
+function sandboxBlueprintContractKey() {
+  const dataContract = currentPhase.backgroundSlo
+    ? `-${currentPhase.backgroundSlo.minimumDeliveryPercent}-${currentPhase.backgroundSlo.maxLagSeconds}`
+    : "-none";
+  return `sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}-${latencySlo}-${errorSlo}${dataContract}`;
+}
+
 function blueprintStorageKey(phaseIndex = currentPhaseIndex) {
   if (isSandboxMode && phaseIndex === campaignPhases.length) {
-    const dataContract = currentPhase.backgroundSlo
-      ? `-${currentPhase.backgroundSlo.minimumDeliveryPercent}-${currentPhase.backgroundSlo.maxLagSeconds}`
-      : "-none";
-    return `sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}-${latencySlo}-${errorSlo}${dataContract}`;
+    return `${sandboxBlueprintContractKey()}-${sandboxTrafficPattern}-${sandboxTraceSeed}`;
   }
   return `sysdex-blueprint-v1-${phaseIndex}`;
 }
@@ -2946,7 +2987,10 @@ function validateBlueprintCandidate(value: unknown): SavedBlueprintV1 | null {
 
 function readSavedBlueprint(): SavedBlueprintV1 | null {
   const keys = [blueprintStorageKey()];
-  if (usesDefaultSandboxContract()) {
+  if (isSandboxMode && sandboxTrafficPattern === "steady" && sandboxTraceSeed === 42) {
+    keys.push(sandboxBlueprintContractKey());
+  }
+  if (usesDefaultSandboxContract() && sandboxTrafficPattern === "steady" && sandboxTraceSeed === 42) {
     keys.push(`sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}`);
   }
   for (const key of keys) {
@@ -3121,6 +3165,8 @@ async function shareBlueprint() {
     url.searchParams.set("rps", String(targetRps));
     url.searchParams.set("p95", String(latencySlo));
     url.searchParams.set("err", String(errorSlo));
+    url.searchParams.set("shape", sandboxTrafficPattern);
+    url.searchParams.set("seed", String(sandboxTraceSeed));
     if (currentPhase.backgroundSlo) {
       url.searchParams.set("delivery", String(currentPhase.backgroundSlo.minimumDeliveryPercent));
       url.searchParams.set("lag", String(currentPhase.backgroundSlo.maxLagSeconds));
@@ -4236,7 +4282,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
         && metrics.latency <= latencySlo
         && metrics.errors < errorSlo
         && contractReady;
-      stage = "Free Lab · Live workload";
+      stage = `Free Lab · ${sandboxTrafficPatterns[sandboxTrafficPattern].name} trace · seed ${sandboxTraceSeed}`;
       title = healthy ? "Every selected contract is green" : "Observe the limiting contract";
       description = healthy
         ? "Keep it running, trace paths, or select any machine and take it offline. Nothing is locked into a canonical solution."
@@ -4975,7 +5021,7 @@ function drillSnapshotStorageKey(phaseIndex = currentPhaseIndex) {
     const dataContract = currentPhase.backgroundSlo
       ? `-${currentPhase.backgroundSlo.minimumDeliveryPercent}-${currentPhase.backgroundSlo.maxLagSeconds}`
       : "-none";
-    return `sysbench-drill-snapshot-v1-lab-${currentPhase.workload}-${targetRps}-${latencySlo}-${errorSlo}${dataContract}`;
+    return `sysbench-drill-snapshot-v1-lab-${currentPhase.workload}-${targetRps}-${latencySlo}-${errorSlo}${dataContract}-${sandboxTrafficPattern}-${sandboxTraceSeed}`;
   }
   return `sysbench-drill-snapshot-v1-${phaseIndex}`;
 }
@@ -5184,12 +5230,19 @@ function stopTest(silent = false) {
     : "Traffic test aborted. Topology returned to build mode.");
 }
 
+function sandboxTraceDemand(operatingSeconds: number) {
+  return workloadDemandAt(sandboxTrafficPattern, targetRps, sandboxTraceSeed, operatingSeconds);
+}
+
 function updateTest(delta: number) {
   if (!isRunning) return;
   if (isSandboxMode) {
     testElapsed += delta;
     const rampProgress = THREE.MathUtils.clamp(testElapsed / rampDuration, 0, 1);
-    currentDemand = Math.round(THREE.MathUtils.lerp(Math.max(100, targetRps * 0.2), targetRps, rampProgress));
+    const tracedDemand = sandboxTraceDemand(Math.max(0, testElapsed - rampDuration));
+    currentDemand = rampProgress < 1
+      ? Math.round(THREE.MathUtils.lerp(Math.max(100, targetRps * 0.2), tracedDemand, rampProgress))
+      : tracedDemand;
     const metrics = calculateMetrics(currentDemand);
     const contractHealthy = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
     const healthy = rampProgress >= 1
@@ -5199,12 +5252,13 @@ function updateTest(delta: number) {
       && contractHealthy;
     testPhase = rampProgress < 1 ? "ramping" : "holding";
     stableElapsed = healthy ? stableElapsed + delta : 0;
-    missionPhaseElement.textContent = rampProgress < 1 ? "Lab ramp" : healthy ? "Contracts green" : "Observing";
+    const traceName = sandboxTrafficPatterns[sandboxTrafficPattern].name;
+    missionPhaseElement.textContent = rampProgress < 1 ? "Lab ramp" : healthy ? `${traceName} trace · green` : `${traceName} trace · observing`;
     testPhaseElement.textContent = rampProgress < 1
       ? `Ramping · ${currentDemand.toLocaleString("en-US")} r/s`
-      : healthy ? "Continuous workload · all green" : "Continuous workload · inspect graph";
+      : `${traceName} trace · ${currentDemand.toLocaleString("en-US")} r/s${healthy ? " · all green" : " · inspect graph"}`;
     testTimeElement.textContent = rampProgress < 1 ? `${Math.ceil(rampDuration - testElapsed)}s` : `${Math.floor(testElapsed)}s live`;
-    testProgressFill.style.scale = `${rampProgress} 1`;
+    testProgressFill.style.scale = `${rampProgress < 1 ? rampProgress : THREE.MathUtils.clamp(currentDemand / targetRps, 0, 1)} 1`;
     return;
   }
   const waitingForTutorialResponse = currentPhaseIndex === 0 && incidentMode === "active";
@@ -5426,6 +5480,18 @@ sandboxDemandInput.addEventListener("input", () => {
   sandboxTargetRps = Number(sandboxDemandInput.value);
   updateSandboxSetupUi();
 });
+sandboxPatterns.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-pattern]");
+  if (!button) return;
+  const pattern = button.dataset.pattern as SandboxTrafficPattern;
+  if (!Object.prototype.hasOwnProperty.call(sandboxTrafficPatterns, pattern)) return;
+  sandboxTrafficPattern = pattern;
+  updateSandboxSetupUi();
+});
+sandboxSeedInput.addEventListener("change", () => {
+  sandboxTraceSeed = normalizeSandboxTraceSeed(Number(sandboxSeedInput.value));
+  updateSandboxSetupUi();
+});
 [sandboxLatencyContract, sandboxErrorContract, sandboxDeliveryContractValue, sandboxLagContractValue]
   .forEach((input) => input.addEventListener("change", commitSandboxContractInputs));
 resetSandboxContractButton.addEventListener("click", () => {
@@ -5435,7 +5501,8 @@ resetSandboxContractButton.addEventListener("click", () => {
 });
 enterSandboxButton.addEventListener("click", () => {
   commitSandboxContractInputs();
-  beginSandboxSession(sandboxWorkload, sandboxTargetRps, sandboxContract);
+  sandboxTraceSeed = normalizeSandboxTraceSeed(Number(sandboxSeedInput.value));
+  beginSandboxSession(sandboxWorkload, sandboxTargetRps, sandboxContract, sandboxTrafficPattern, sandboxTraceSeed);
 });
 dismissBriefingButton.addEventListener("click", dismissPhaseBriefing);
 missionsButton.addEventListener("click", openCampaignScreen);
@@ -5991,13 +6058,28 @@ const requestedLabWorkload = requestedLab !== null && Object.prototype.hasOwnPro
 const requestedSandboxContract = requestedLabWorkload
   ? sandboxContractFromSearch(searchParams, requestedLabWorkload)
   : null;
+const requestedPatternValue = searchParams.get("shape") ?? "steady";
+const requestedTrafficPattern = Object.prototype.hasOwnProperty.call(sandboxTrafficPatterns, requestedPatternValue)
+  ? requestedPatternValue as SandboxTrafficPattern
+  : null;
+const requestedTraceSeed = searchParams.has("seed") ? Number(searchParams.get("seed")) : 42;
 const requestedSandbox = requestedLabWorkload !== null
   && requestedSandboxContract !== null
+  && requestedTrafficPattern !== null
   && Number.isFinite(requestedLabRps)
   && requestedLabRps >= 500
-  && requestedLabRps <= 10_000;
-if (requestedSandbox && requestedLabWorkload && requestedSandboxContract) {
-  beginSandboxSession(requestedLabWorkload, requestedLabRps, requestedSandboxContract);
+  && requestedLabRps <= 10_000
+  && Number.isInteger(requestedTraceSeed)
+  && requestedTraceSeed >= 1
+  && requestedTraceSeed <= 9_999;
+if (requestedSandbox && requestedLabWorkload && requestedSandboxContract && requestedTrafficPattern) {
+  beginSandboxSession(
+    requestedLabWorkload,
+    requestedLabRps,
+    requestedSandboxContract,
+    requestedTrafficPattern,
+    requestedTraceSeed,
+  );
 }
 const requestedPhase = Number(searchParams.get("phase"));
 if (!requestedSandbox && Number.isInteger(requestedPhase) && requestedPhase >= 0 && requestedPhase < campaignPhases.length) {
