@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Pixelify Sans";
+  src: url("/fonts/PixelifySans-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: block;
+}
+
 :root {
   color: #e1e6ee;
   background: #111520;
@@ -4212,7 +4220,7 @@ body {
     inset 0 2px 0 rgba(190, 211, 212, 0.2),
     inset 0 -4px 0 rgba(17, 39, 50, 0.42);
   --shadow-ui: var(--hud-shadow);
-  --font-pixel: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-pixel: "Pixelify Sans", ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 h1,
@@ -4981,4 +4989,451 @@ button:focus-visible {
   .trace-button { min-height: 34px; margin-top: 6px; }
   .run-button { min-height: 43px; }
 }
+}
+
+/* Reference-derived production art layer. */
+.game-shell::before,
+.game-shell::after {
+  display: none;
+}
+
+.workshop-plate {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+  image-rendering: pixelated;
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  outline-offset: -1px;
+}
+
+.workshop-cursor-cleanup {
+  position: absolute;
+  top: 37.194474%;
+  left: 40.669856%;
+  z-index: 1;
+  width: 14.354067%;
+  height: 23.379384%;
+  object-fit: fill;
+  image-rendering: pixelated;
+  pointer-events: none;
+  user-select: none;
+}
+
+#game-canvas {
+  z-index: 2;
+  filter: none;
+}
+
+.component-sprite-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.component-sprite {
+  --sprite-depth: 1;
+  position: absolute;
+  width: clamp(122px, 9.4vw, 160px);
+  height: auto;
+  transform: translate(-50%, -78%) scale(var(--sprite-depth));
+  transform-origin: 50% 78%;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 7px 2px rgba(0, 8, 15, 0.58));
+  pointer-events: none;
+  user-select: none;
+  transition-property: opacity, filter, transform;
+  transition-duration: 150ms;
+  transition-timing-function: steps(2, end);
+}
+
+.component-sprite[data-selected="true"] {
+  filter:
+    drop-shadow(0 0 2px #65e8e0)
+    drop-shadow(0 0 8px rgba(73, 221, 213, 0.74))
+    drop-shadow(0 7px 2px rgba(0, 8, 15, 0.58));
+}
+
+.component-sprite[data-state="failed"] {
+  filter:
+    grayscale(0.42)
+    sepia(0.4)
+    hue-rotate(300deg)
+    drop-shadow(0 0 7px rgba(224, 67, 89, 0.8));
+}
+
+.component-sprite[data-state="degraded"],
+.component-sprite[data-state="hot"] {
+  filter:
+    sepia(0.18)
+    drop-shadow(0 0 6px rgba(225, 144, 70, 0.64))
+    drop-shadow(0 7px 2px rgba(0, 8, 15, 0.58));
+}
+
+.component-sprite[data-state="disconnected"] {
+  filter: grayscale(0.68) brightness(0.72) drop-shadow(0 7px 2px rgba(0, 8, 15, 0.58));
+}
+
+.component-sprite-ghost {
+  opacity: 0.52 !important;
+  filter:
+    saturate(1.4)
+    drop-shadow(0 0 2px #64e8e1)
+    drop-shadow(0 0 10px rgba(70, 218, 211, 0.75));
+}
+
+.component-sprite-ghost[data-valid="false"] {
+  filter:
+    grayscale(0.32)
+    sepia(0.7)
+    hue-rotate(300deg)
+    drop-shadow(0 0 9px rgba(225, 63, 86, 0.85));
+}
+
+.part-preview img {
+  transform: scale(1.18);
+  filter: drop-shadow(0 4px 1px rgba(0, 7, 13, 0.75));
+}
+
+.parts-panel,
+.mission-card,
+.telemetry-panel {
+  isolation: isolate;
+  box-shadow: 8px 10px 0 rgba(0, 9, 16, 0.62);
+}
+
+.parts-panel::before,
+.mission-card::before,
+.telemetry-panel::before {
+  inset: -6px;
+  z-index: 8;
+  border: 16px solid transparent;
+  background: none;
+  pointer-events: none;
+}
+
+.parts-panel::before {
+  border-image: url("/assets/sysdex-inventory-frame-v1.png") 20 stretch;
+}
+
+.mission-card::before {
+  border-image: url("/assets/sysdex-mission-frame-v1.png") 20 stretch;
+}
+
+.telemetry-panel::before {
+  border-image: url("/assets/sysdex-telemetry-frame-v1.png") 20 stretch;
+}
+
+/* Exact 1672 × 941 geometry from the approved workshop frame. */
+.workshop-plate {
+  outline: 0;
+}
+
+.parts-panel {
+  top: 43px;
+  right: auto;
+  bottom: 26px;
+  left: 25px;
+  width: 248px;
+  padding: 20px 11px 27px;
+}
+
+.parts-panel .panel-title {
+  min-height: 38px;
+  margin-bottom: 10px;
+  padding: 7px 8px 6px;
+}
+
+.parts-panel .panel-kicker {
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+
+.parts-list {
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: unset;
+  gap: 8px 6px;
+  margin-bottom: 68px;
+  overflow: hidden;
+}
+
+.part-card {
+  min-height: 0;
+  padding: 8px 6px 7px;
+  grid-template-rows: 16px minmax(0, 1fr) 16px;
+  gap: 1px;
+}
+
+.part-name {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+
+.part-cost {
+  font-size: 17px;
+  line-height: 16px;
+}
+
+.part-preview {
+  min-height: 0;
+}
+
+.part-preview img {
+  scale: 1;
+  transform: scale(1.35);
+}
+
+.parts-list::after {
+  content: "LOG AGGREGATOR\A\A\A PHASE 08";
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 6px 7px;
+  border: 1px solid #496376;
+  color: #71898e;
+  background:
+    linear-gradient(rgba(4, 16, 24, 0.48), rgba(4, 16, 24, 0.48)),
+    url("/assets/components-v1/cdn-edge.png") center 53% / 78% auto no-repeat,
+    #092130;
+  box-shadow:
+    inset 0 0 0 2px #061722,
+    inset 0 -3px 0 #102c3d,
+    0 2px 0 #0b1822;
+  font: 700 8px/16px var(--font-pixel);
+  text-align: left;
+  white-space: pre;
+  opacity: 0.5;
+}
+
+.inventory-footer-button {
+  right: 11px;
+  bottom: 27px;
+  left: 11px;
+  height: 58px;
+}
+
+.mission-card {
+  top: 33px;
+  right: 29px;
+  width: 440px;
+  height: 426px;
+  min-height: 426px;
+  padding: 21px 23px 18px;
+}
+
+.mission-heading {
+  position: absolute;
+  top: 26px;
+  right: 22px;
+  left: 29px;
+  min-height: 38px;
+}
+
+.mission-heading .mission-label {
+  margin-left: 0;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+.mission-phase {
+  width: 112px;
+  min-height: 38px;
+  padding: 9px 8px 8px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.mission-card h2 {
+  position: absolute;
+  top: 50px;
+  right: 20px;
+  left: 28px;
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.mission-guide {
+  position: absolute;
+  top: 95px;
+  right: 20px;
+  left: 24px;
+  min-height: 154px;
+  height: 156px;
+  margin: 0;
+  padding: 18px 14px 11px;
+}
+
+.mission-guide > span {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.mission-guide > strong {
+  margin-bottom: 6px;
+  font-size: 20px;
+}
+
+.mission-guide > p {
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.mission-guide[data-copy="long"] > span {
+  font-size: 13px;
+}
+
+.mission-guide[data-copy="long"] > p {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.mission-objectives {
+  position: absolute;
+  top: 258px;
+  right: 20px;
+  left: 24px;
+  gap: 7px;
+}
+
+.objective-row {
+  min-height: 40px;
+}
+
+.objective-row span,
+.objective-row strong {
+  font-size: 18px;
+}
+
+.telemetry-panel {
+  top: 595px;
+  right: 27px;
+  bottom: auto;
+  width: 515px;
+  height: 323px;
+  min-height: 323px;
+  padding: 17px 18px 16px 21px;
+}
+
+.status-row {
+  min-height: 23px;
+  margin-bottom: 7px;
+}
+
+.status-row .panel-kicker {
+  margin-left: 6px;
+  font-size: 24px;
+}
+
+.telemetry-console {
+  grid-template-columns: minmax(0, 1fr) 124px;
+  gap: 23px;
+  height: 232px;
+}
+
+.telemetry-readouts,
+.metrics {
+  gap: 8px;
+}
+
+.metric {
+  height: 72px;
+  min-height: 72px;
+  padding: 12px 205px 8px 14px;
+}
+
+.metric::before {
+  top: 11px;
+  right: 10px;
+  bottom: 9px;
+  width: 195px;
+}
+
+.metric::after {
+  right: 11px;
+  bottom: 10px;
+  width: 193px;
+}
+
+.metric span {
+  font-size: 14px;
+}
+
+.metric strong {
+  margin-top: 8px;
+  font-size: 24px;
+}
+
+.telemetry-controls {
+  gap: 8px;
+}
+
+.run-button,
+.trace-button,
+.telemetry-export-button {
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 6px;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.part-card:disabled {
+  opacity: 0.62;
+  filter: grayscale(0.38);
+}
+
+.mission-card:has(#objective-background:not([hidden])) {
+  height: 473px;
+  min-height: 473px;
+}
+
+/* Fresh phase-one blueprint: the approved frame remains the exact visual source.
+   Real controls stay in the same hit areas and become live on first interaction. */
+.game-shell[data-reference-idle="true"] .parts-panel,
+.game-shell[data-reference-idle="true"] .mission-card,
+.game-shell[data-reference-idle="true"] .telemetry-panel {
+  opacity: 0;
+  transition: opacity 90ms steps(2, end);
+}
+
+.game-shell[data-reference-idle="true"] .workshop-cursor-cleanup {
+  opacity: 0;
+}
+
+@media (max-width: 1671px), (max-height: 940px) {
+  .game-shell {
+    --reference-scale: min(1, calc(100vw / 1672px), calc(100vh / 941px));
+  }
+
+  .parts-panel {
+    top: calc(43px * var(--reference-scale));
+    bottom: auto;
+    left: calc(25px * var(--reference-scale));
+    scale: var(--reference-scale);
+    transform-origin: top left;
+  }
+
+  .mission-card {
+    top: calc(33px * var(--reference-scale));
+    right: calc(29px * var(--reference-scale));
+    scale: var(--reference-scale);
+    transform-origin: top right;
+  }
+
+  .telemetry-panel {
+    top: calc(595px * var(--reference-scale));
+    right: calc(27px * var(--reference-scale));
+    scale: var(--reference-scale);
+    transform-origin: top right;
+  }
 }

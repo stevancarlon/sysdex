@@ -62,6 +62,7 @@ type PlacedComponent = {
   group: THREE.Group;
   grid: GridPosition;
   label: HTMLDivElement;
+  sprite: HTMLImageElement;
   state: "healthy" | "degraded" | "failed";
 };
 
@@ -226,6 +227,17 @@ const componentOrder: ComponentKind[] = [
   "objectStorage",
   "cdn",
 ];
+const componentSpriteSources: Record<ComponentKind, string> = {
+  loadBalancer: "/assets/components-v1/load-balancer.png",
+  api: "/assets/components-v1/api-gateway.png",
+  redis: "/assets/components-v1/cache-node.png",
+  postgres: "/assets/components-v1/database-proxy.png",
+  queue: "/assets/components-v1/message-queue.png",
+  worker: "/assets/components-v1/worker-node.png",
+  geoIndex: "/assets/components-v1/geo-index.png",
+  objectStorage: "/assets/components-v1/object-storage.png",
+  cdn: "/assets/components-v1/cdn-edge.png",
+};
 const blueprintConnectionModes: SimulationEdgeMode[] = ["request", "cache", "enqueue", "consume", "commit", "replicate"];
 const sandboxPresets: Record<WorkloadKind, {
   name: string;
@@ -402,7 +414,10 @@ function formatErrorPercent(value: number, contract = value) {
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="game-shell">
+    <img class="workshop-plate" src="/assets/sysdex-approved-reference-v1.png" alt="" aria-hidden="true" />
+    <img class="workshop-cursor-cleanup" src="/assets/sysdex-live-cursor-cleanup-v1.png" alt="" aria-hidden="true" />
     <canvas id="game-canvas" aria-label="Isometric system design workspace"></canvas>
+    <div class="component-sprite-layer" id="component-sprite-layer" aria-hidden="true"></div>
 
     <div class="start-overlay" id="start-overlay" data-visible="true" aria-hidden="false">
       <section class="start-card" role="dialog" aria-modal="true" aria-labelledby="start-title">
@@ -811,6 +826,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas")!;
+const gameShellElement = document.querySelector<HTMLElement>(".game-shell")!;
+const componentSpriteLayer = document.querySelector<HTMLDivElement>("#component-sprite-layer")!;
 canvas.dataset.reducedMotion = String(prefersReducedMotion);
 reducedMotionQuery.addEventListener("change", (event) => {
   prefersReducedMotion = event.matches;
@@ -1246,11 +1263,14 @@ for (let row = 0; row < rows; row += 1) {
 
 addBoardDetails();
 addEnvironment();
+boardGroup.visible = false;
+environmentGroup.visible = false;
 
 const machinesGroup = new THREE.Group();
 const connectionsGroup = new THREE.Group();
 const packetsGroup = new THREE.Group();
 scene.add(connectionsGroup, packetsGroup, machinesGroup);
+machinesGroup.visible = false;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -1258,6 +1278,22 @@ const clock = new THREE.Clock();
 const nodes: PlacedComponent[] = [];
 const connections: Connection[] = [];
 const authoredConnections: AuthoredConnection[] = [];
+
+function setReferenceIdle(enabled: boolean) {
+  gameShellElement.dataset.referenceIdle = String(enabled);
+}
+
+gameShellElement.addEventListener("pointerdown", (event) => {
+  if (gameShellElement.dataset.referenceIdle !== "true") return;
+  const target = event.target as Element;
+  if (target.closest(".parts-panel, .mission-card, .telemetry-panel, #game-canvas")) {
+    setReferenceIdle(false);
+  }
+}, { capture: true });
+
+window.addEventListener("keydown", () => {
+  if (gameShellElement.dataset.referenceIdle === "true") setReferenceIdle(false);
+}, { capture: true });
 const packets: Packet[] = [];
 let packetSequence = 0;
 const trafficRoutes: Connection[][] = [];
@@ -1276,6 +1312,7 @@ let draggedNode: PlacedComponent | null = null;
 let pointerDownPosition = { x: 0, y: 0 };
 let nodeHasMoved = false;
 let ghost: THREE.Group | null = null;
+let ghostSprite: HTMLImageElement | null = null;
 let placementTile: THREE.Mesh | null = null;
 let isRunning = false;
 let testPhase: TestPhase = "idle";
@@ -1440,6 +1477,7 @@ function dismissPhaseBriefing() {
   phaseBriefingOverlay.dataset.visible = "false";
   phaseBriefingOverlay.setAttribute("aria-hidden", "true");
   missionCard.dataset.briefing = "false";
+  if (currentPhaseIndex === 0 && nodes.length === 0) setReferenceIdle(true);
   window.setTimeout(() => missionCard.focus({ preventScroll: true }), 320);
   showToast(currentPhaseIndex === 1
     ? "Inherited system loaded. Trace the blocking analytics call and compare valid fixes."
@@ -2176,52 +2214,12 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
 }
 
 function renderPartPreviews() {
-  const previewRenderer = new THREE.WebGLRenderer({
-    antialias: false,
-    alpha: true,
-    preserveDrawingBuffer: true,
-  });
-  previewRenderer.setSize(110, 72, false);
-  previewRenderer.setPixelRatio(1);
-  previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
-  previewRenderer.toneMapping = THREE.NeutralToneMapping;
-  previewRenderer.toneMappingExposure = 1.24;
-  previewRenderer.setClearColor(0x000000, 0);
-
-  const previewScene = new THREE.Scene();
-  previewScene.add(new THREE.HemisphereLight(0xbac9df, 0x1b2030, 2.8));
-  const previewKey = new THREE.DirectionalLight(0xdce7ff, 4.0);
-  previewKey.position.set(-3, 7, 5);
-  previewScene.add(previewKey);
-  const previewRim = new THREE.PointLight(0x57c8c7, 8, 8, 2);
-  previewRim.position.set(3, 3, -2);
-  previewScene.add(previewRim);
-
-  const previewCamera = new THREE.OrthographicCamera(-1.08, 1.08, 0.76, -0.76, 0.1, 30);
-  previewCamera.position.set(3.5, 3.05, 4.5);
-  previewCamera.lookAt(0, 0.72, 0);
-
   for (const kind of componentOrder) {
-    const machine = createMachine(kind);
-    machine.rotation.y = -0.42;
-    machine.scale.setScalar(kind === "queue" ? 1.17 : 1.08);
-    previewScene.add(machine);
-    previewRenderer.render(previewScene, previewCamera);
+    const previewData = componentSpriteSources[kind];
     const image = document.querySelector<HTMLImageElement>(`#part-preview-${kind}`);
-    const previewData = previewRenderer.domElement.toDataURL("image/png");
     brandPreviewData.set(kind, previewData);
     if (image) image.src = previewData;
-    previewScene.remove(machine);
-    machine.traverse((object) => {
-      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
-      object.geometry.dispose();
-      const objectMaterial = object.material;
-      if (Array.isArray(objectMaterial)) objectMaterial.forEach((item) => item.dispose());
-      else objectMaterial.dispose();
-    });
   }
-  previewRenderer.dispose();
-  previewRenderer.forceContextLoss();
   setBrandItem(componentOrder[brandItemIndex], false);
   if (phaseBriefingOverlay.dataset.visible === "true") renderPhaseBriefing();
 }
@@ -2803,12 +2801,21 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
   group.userData.dragLift = 0;
   machinesGroup.add(group);
 
+  const sprite = document.createElement("img");
+  sprite.className = "component-sprite";
+  sprite.src = componentSpriteSources[kind];
+  sprite.alt = "";
+  sprite.draggable = false;
+  sprite.dataset.kind = kind;
+  sprite.dataset.state = "healthy";
+  componentSpriteLayer.append(sprite);
+
   const label = document.createElement("div");
   label.className = "component-label";
   label.innerHTML = `${contextualComponentLabel(kind)}<small>${contextualComponentRole(kind)}</small>`;
   document.querySelector(".game-shell")!.append(label);
 
-  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, state: "healthy" };
+  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, sprite, state: "healthy" };
   nodes.push(node);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -2832,6 +2839,7 @@ function moveNode(node: PlacedComponent, grid: GridPosition) {
 
 function selectNode(node: PlacedComponent | null) {
   selectedNode = node;
+  for (const candidate of nodes) candidate.sprite.dataset.selected = String(candidate === node);
   if (!node) {
     selectedCard.dataset.visible = "false";
     chaosButton.hidden = true;
@@ -2895,6 +2903,8 @@ function updateMachineAnimations(delta: number) {
     const degraded = node.state === "degraded";
     const disconnected = disconnectedNodeIds?.has(String(node.id)) ?? false;
     const overloaded = isRunning && metrics.bottleneckKind === node.kind && currentDemand > metrics.capacity;
+    node.sprite.dataset.state = failed ? "failed" : degraded ? "degraded" : disconnected ? "disconnected" : overloaded ? "hot" : "healthy";
+    node.sprite.dataset.running = String(isRunning && !failed && !disconnected);
     const targetScale = (selected ? 1.025 : hovered ? 0.985 : 0.94) * (failed ? 0.9 : degraded ? 0.96 : 1);
     const desiredLift = node === draggedNode ? 0.2 : 0;
     group.userData.dragLift = THREE.MathUtils.lerp(group.userData.dragLift as number ?? 0, desiredLift, Math.min(1, delta * 15));
@@ -2990,6 +3000,7 @@ function removeNode(node: PlacedComponent) {
     else objectMaterial.dispose();
   });
   node.label.remove();
+  node.sprite.remove();
   selectNode(null);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -3004,6 +3015,7 @@ function clearLaboratory() {
   for (const node of nodes) {
     machinesGroup.remove(node.group);
     node.label.remove();
+    node.sprite.remove();
     node.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
       object.geometry.dispose();
@@ -3395,9 +3407,16 @@ function updateGhost(kind: ComponentKind, grid: GridPosition | null) {
     ghost.userData.kind = kind;
     ghost.scale.setScalar(0.94);
     scene.add(ghost);
+    ghostSprite = document.createElement("img");
+    ghostSprite.className = "component-sprite component-sprite-ghost";
+    ghostSprite.src = componentSpriteSources[kind];
+    ghostSprite.alt = "";
+    ghostSprite.draggable = false;
+    componentSpriteLayer.append(ghostSprite);
   }
   ghost.position.copy(gridToWorld(grid));
   const valid = !isOccupied(grid) && componentDefinitions[kind].cost <= remainingBudget();
+  if (ghostSprite) ghostSprite.dataset.valid = String(valid);
   const nextTile = tileMeshes.find((tile) => {
     const tileGrid = tile.userData.grid as GridPosition;
     return tileGrid.col === grid.col && tileGrid.row === grid.row;
@@ -3428,6 +3447,8 @@ function clearPlacementTile() {
 
 function removeGhost() {
   clearPlacementTile();
+  ghostSprite?.remove();
+  ghostSprite = null;
   if (!ghost) return;
   scene.remove(ghost);
   ghost.traverse((object) => {
@@ -4554,6 +4575,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
   }
 
   missionGuide.dataset.state = state;
+  missionGuide.dataset.copy = description.length > 100 ? "long" : "normal";
   missionGuideStage.textContent = stage;
   missionGuideTitle.textContent = title;
   missionDescriptionElement.textContent = description;
@@ -5974,6 +5996,19 @@ dismissResultButton.addEventListener("click", () => {
   updateTelemetry();
 });
 
+function positionComponentSprite(sprite: HTMLImageElement, worldPosition: THREE.Vector3) {
+  const rect = canvas.getBoundingClientRect();
+  const projected = worldPosition.clone().project(camera);
+  const x = (projected.x * 0.5 + 0.5) * rect.width;
+  const y = (-projected.y * 0.5 + 0.5) * rect.height;
+  const depthScale = THREE.MathUtils.clamp(0.86 + (y / Math.max(1, rect.height)) * 0.22, 0.88, 1.08);
+  sprite.style.left = `${x}px`;
+  sprite.style.top = `${y}px`;
+  sprite.style.zIndex = String(Math.round(y));
+  sprite.style.setProperty("--sprite-depth", depthScale.toFixed(3));
+  sprite.style.opacity = projected.z < 1 ? "1" : "0";
+}
+
 function updateLabels() {
   const rect = canvas.getBoundingClientRect();
   const occupiedLabels: Array<{ left: number; right: number; top: number; bottom: number }> = [];
@@ -5984,6 +6019,7 @@ function updateLabels() {
       && candidate.bottom > occupied.top,
   );
   for (const node of nodes) {
+    positionComponentSprite(node.sprite, node.group.position);
     const projected = node.group.position.clone();
     projected.y += 1.95;
     projected.project(camera);
@@ -6000,6 +6036,7 @@ function updateLabels() {
       occupiedLabels.push({ left: x - width / 2 - 4, right: x + width / 2 + 4, top: y - 34, bottom: y + 4 });
     }
   }
+  if (ghost && ghostSprite) positionComponentSprite(ghostSprite, ghost.position);
   for (const connection of connections) {
     if (!connection.annotation) continue;
     const projected = connection.curve.getPointAt(0.52);
@@ -6355,4 +6392,7 @@ if (sharedDesign !== null) {
 }
 if (searchParams.get("wiring") === "manual" && manualWiringAvailable() && topologyMode === "automatic") {
   setWiringEditing(true);
+}
+if (demoMode === "empty" && currentPhaseIndex === 0 && nodes.length === 0) {
+  setReferenceIdle(true);
 }
