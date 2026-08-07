@@ -119,8 +119,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "LB",
     role: "Traffic dispatcher",
     cost: 120,
-    color: 0x94c2d0,
-    cssColor: "#94c2d0",
+    color: 0x58c7d4,
+    cssColor: "#58c7d4",
     description: "Distributes incoming requests across API servers so no single machine receives all the traffic.",
     capacityText: "950 req/s",
     effectText: "Unlocks horizontal scaling",
@@ -130,8 +130,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "API",
     role: "Request processor",
     cost: 180,
-    color: 0xc0c5cf,
-    cssColor: "#c0c5cf",
+    color: 0xd5e0dd,
+    cssColor: "#d5e0dd",
     description: "Runs the URL-shortening application: validates requests, creates short codes, and returns redirects.",
     capacityText: "300 req/s",
     effectText: "Add replicas for throughput",
@@ -141,8 +141,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "R",
     role: "Fast memory cabinet",
     cost: 110,
-    color: 0x8099b8,
-    cssColor: "#8099b8",
+    color: 0x789bd3,
+    cssColor: "#789bd3",
     description: "Keeps frequently requested short links in fast key-value memory, reducing database work and latency.",
     capacityText: "1,750 reads/s",
     effectText: "Cuts redirect latency by 92 ms",
@@ -152,8 +152,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "PG",
     role: "Durable archive",
     cost: 220,
-    color: 0x87b1ae,
-    cssColor: "#87b1ae",
+    color: 0x71b9a9,
+    cssColor: "#71b9a9",
     description: "Durably stores the mapping between each short code and its original destination URL.",
     capacityText: "560 reads/s",
     effectText: "Required durable source of truth",
@@ -163,8 +163,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "Q",
     role: "Work conveyor",
     cost: 130,
-    color: 0x9fa1b8,
-    cssColor: "#9fa1b8",
+    color: 0xa29bc9,
+    cssColor: "#a29bc9",
     description: "Buffers analytics and background jobs so API requests do not wait for slower work to finish.",
     capacityText: "1,200 jobs/s",
     effectText: "Buffers work for async processors",
@@ -174,8 +174,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "WK",
     role: "Async job processor",
     cost: 140,
-    color: 0xcf8678,
-    cssColor: "#cf8678",
+    color: 0xe58b87,
+    cssColor: "#e58b87",
     description: "Consumes queued analytics, media, and location jobs away from the synchronous API request path.",
     capacityText: "1,600 jobs/s",
     effectText: "Completes the Queue → Worker path",
@@ -185,8 +185,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "GEO",
     role: "Proximity search grid",
     cost: 260,
-    color: 0x80b1b2,
-    cssColor: "#80b1b2",
+    color: 0x72c7b3,
+    cssColor: "#72c7b3",
     description: "Partitions location data into nearby cells so matching and dispatch queries avoid global scans.",
     capacityText: "3,200 lookups/s",
     effectText: "Enables low-latency nearby search",
@@ -196,8 +196,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "OBJ",
     role: "Media bucket cluster",
     cost: 320,
-    color: 0xb5acc0,
-    cssColor: "#b5acc0",
+    color: 0xb5acd6,
+    cssColor: "#b5acd6",
     description: "Stores large immutable media objects separately from transactional metadata in PostgreSQL.",
     capacityText: "5,000 objects/s",
     effectText: "Removes media blobs from the database",
@@ -207,8 +207,8 @@ const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
     shortLabel: "CDN",
     role: "Regional content edge",
     cost: 400,
-    color: 0x8dc3cf,
-    cssColor: "#8dc3cf",
+    color: 0x69c9dd,
+    cssColor: "#69c9dd",
     description: "Caches popular content near users and shields the origin from repeated global reads.",
     capacityText: "4,000 edge r/s",
     effectText: "Offloads 22% origin traffic per edge",
@@ -1003,7 +1003,7 @@ for (const kind of componentOrder) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x121622, 19, 33);
+scene.fog = new THREE.Fog(0x354958, 21, 38);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1011,18 +1011,18 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.toneMappingExposure = 1.38;
+renderer.toneMappingExposure = 1.62;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
-camera.position.set(8.8, 18.5, 10.6);
-camera.lookAt(0, 0.12, 0);
+camera.position.set(8.8, 16.2, 10.6);
+camera.lookAt(0, 0.3, 0);
 camera.zoom = 1;
 camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-const pixelatedPass = new RenderPixelatedPass(4, scene, camera, {
-  normalEdgeStrength: 0.08,
-  depthEdgeStrength: 0.14,
+const pixelatedPass = new RenderPixelatedPass(3, scene, camera, {
+  normalEdgeStrength: 0.18,
+  depthEdgeStrength: 0.24,
 });
 composer.addPass(pixelatedPass);
 const palettePass = new ShaderPass({
@@ -1030,8 +1030,8 @@ const palettePass = new ShaderPass({
   uniforms: {
     tDiffuse: { value: null },
     blockSize: { value: pixelatedPass.pixelSize },
-    colorLevels: { value: 14 },
-    ditherStrength: { value: 0.04 },
+    colorLevels: { value: 24 },
+    ditherStrength: { value: 0.012 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -1070,10 +1070,10 @@ const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
 
-const ambientLight = new THREE.HemisphereLight(0xd7e3f5, 0x343b55, 3.15);
+const ambientLight = new THREE.HemisphereLight(0xf4fbff, 0x496b70, 4.35);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xe3ecff, 4.15);
+const keyLight = new THREE.DirectionalLight(0xfff7df, 5.1);
 keyLight.position.set(-9, 15, 11);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
@@ -1084,13 +1084,17 @@ keyLight.shadow.camera.bottom = -11;
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
 
-const blueRimFill = new THREE.PointLight(0x776ab0, 13, 13, 2);
+const blueRimFill = new THREE.PointLight(0x8eaee4, 11, 15, 2);
 blueRimFill.position.set(-5, 5, -4);
 scene.add(blueRimFill);
 
-const coolFill = new THREE.PointLight(0x4bc8d2, 13, 13, 2);
+const coolFill = new THREE.PointLight(0x75e0d6, 12, 15, 2);
 coolFill.position.set(6, 4, 3);
 scene.add(coolFill);
+
+const frontFill = new THREE.DirectionalLight(0xbce7e2, 1.65);
+frontFill.position.set(1, 7, 12);
+scene.add(frontFill);
 
 const boardGroup = new THREE.Group();
 const environmentGroup = new THREE.Group();
@@ -1101,13 +1105,12 @@ const rows = 7;
 const tileSize = 1.3;
 const tileMeshes: THREE.Mesh[] = [];
 const boardActivityMaterials: THREE.MeshStandardMaterial[] = [];
-const machineTextureLoads: Promise<void>[] = [];
-const paintedFloorTexture = loadProjectTexture("/assets/sysbench-floor-panel-1024.png");
-const paintedWallTexture = loadProjectTexture("/assets/sysbench-bulkhead-panel-1024.png");
-const paintedMachineDarkTexture = loadProjectTexture("/assets/sysbench-machine-casing-v1-1024.png");
-const paintedMachineNeutralTexture = loadProjectTexture("/assets/sysbench-machine-casing-neutral-v2-1024.png");
-const paintedFasciaTexture = loadProjectTexture("/assets/sysbench-machine-casing-neutral-v2-1024.png");
-const paintedFasciaBumpTexture = loadProjectTexture("/assets/sysbench-machine-casing-v1-1024.png");
+const paintedFloorTexture = createPixelWorkshopTexture("floor");
+const paintedWallTexture = createPixelWorkshopTexture("wall");
+const paintedMachineDarkTexture = createPixelWorkshopTexture("machine-dark");
+const paintedMachineNeutralTexture = createPixelWorkshopTexture("machine-light");
+const paintedFasciaTexture = createPixelWorkshopTexture("fascia");
+const paintedFasciaBumpTexture = createPixelWorkshopTexture("machine-dark");
 paintedFloorTexture.wrapS = THREE.RepeatWrapping;
 paintedFloorTexture.wrapT = THREE.RepeatWrapping;
 paintedFloorTexture.repeat.set(1, 1);
@@ -1126,7 +1129,7 @@ for (const texture of [paintedFasciaTexture, paintedFasciaBumpTexture]) {
   texture.repeat.set(3.6, 0.86);
 }
 
-const floorTexture = createSurfaceTexture("#527b7a", "#303f4a", "#9aa6ad");
+const floorTexture = createSurfaceTexture("#7fa6a4", "#496773", "#bfd0ca");
 floorTexture.repeat.set(3, 2);
 
 const boardSurfaceMaterial = new THREE.MeshStandardMaterial({
@@ -1135,7 +1138,7 @@ const boardSurfaceMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.96,
   metalness: 0.02,
 });
-const boardFasciaMaterial = fasciaMaterial(0x505a6e, 0.86, 0.3, 0.022);
+const boardFasciaMaterial = fasciaMaterial(0x70869a, 0.86, 0.3, 0.018);
 const boardBase = new THREE.Mesh(
   new THREE.BoxGeometry(columns * tileSize + 0.68, 0.68, rows * tileSize + 0.68),
   [
@@ -1153,7 +1156,7 @@ boardGroup.add(boardBase);
 
 const boardLip = new THREE.Mesh(
   new THREE.BoxGeometry(columns * tileSize + 0.98, 0.34, rows * tileSize + 0.98),
-  fasciaMaterial(0x606a7d, 0.8, 0.34, 0.018),
+  fasciaMaterial(0x8ca0aa, 0.8, 0.28, 0.014),
 );
 boardLip.position.y = -0.43;
 boardLip.receiveShadow = true;
@@ -1175,7 +1178,7 @@ boardGroup.add(paintedFloor);
 for (let row = 0; row < rows; row += 1) {
   for (let col = 0; col < columns; col += 1) {
     const variation = pseudoRandom(row * columns + col);
-    const tileTints = [0xb4cbca, 0xa2b8be, 0xb4c2c8, 0xa9c7c5];
+    const tileTints = [0xd1ded7, 0xc3d7d3, 0xbfd0d4, 0xc9ddd8];
     const tileGeometry = new THREE.BoxGeometry(
       tileSize - 0.008,
       0.08 + variation * 0.025,
@@ -1211,9 +1214,9 @@ for (let row = 0; row < rows; row += 1) {
     const tileOutline = new THREE.LineSegments(
       new THREE.EdgesGeometry(tile.geometry, 28),
       new THREE.LineBasicMaterial({
-        color: 0x18374d,
+        color: 0x315b68,
         transparent: true,
-        opacity: 0.065,
+        opacity: 0.16,
       }),
     );
     tileOutline.renderOrder = 1;
@@ -1689,31 +1692,87 @@ function pseudoRandom(seed: number) {
   return value - Math.floor(value);
 }
 
-function loadProjectTexture(path: string) {
-  const key = path.includes("floor") ? "floor" : path.includes("machine") ? "machine" : "wall";
-  let settleTextureLoad = () => {};
-  if (key === "machine") {
-    machineTextureLoads.push(new Promise<void>((resolve) => {
-      settleTextureLoad = resolve;
-    }));
+type PixelWorkshopTextureKind = "floor" | "wall" | "machine-dark" | "machine-light" | "fascia";
+
+function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = kind === "wall" ? 128 : 64;
+  textureCanvas.height = 64;
+  const context = textureCanvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+
+  const fill = (color: string, x: number, y: number, width: number, height: number) => {
+    context.fillStyle = color;
+    context.fillRect(x, y, width, height);
+  };
+  const dot = (color: string, x: number, y: number, size = 2) => fill(color, x, y, size, size);
+
+  if (kind === "floor") {
+    fill("#91aaa3", 0, 0, 64, 64);
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = 0; col < 2; col += 1) {
+        const x = col * 32;
+        const y = row * 32;
+        fill("#415f69", x, y, 32, 2);
+        fill("#405961", x, y, 2, 32);
+        fill("#aebfb7", x + 2, y + 2, 28, 2);
+        fill((row + col) % 2 ? "#8fa9a6" : "#9bb4ac", x + 3, y + 4, 27, 26);
+        dot("#31505b", x + 5, y + 7, 1);
+        dot("#77958f", x + 25, y + 25, 1);
+      }
+    }
+    fill("#5e817e", 8, 13, 12, 2);
+    fill("#739995", 44, 46, 9, 2);
+    fill("#789794", 48, 18, 6, 1);
+  } else if (kind === "wall") {
+    fill("#63828f", 0, 0, 128, 64);
+    for (let col = 0; col < 4; col += 1) {
+      const x = col * 32;
+      fill("#304b5c", x, 0, 3, 64);
+      fill("#9eb1b2", x + 3, 2, 27, 3);
+      fill(col % 2 ? "#688895" : "#718f98", x + 5, 8, 23, 48);
+      fill("#415f6f", x + 8, 13, 17, 3);
+      fill("#4d6d7a", x + 8, 20, 17, 24);
+      fill("#9ab0ad", x + 10, 22, 13, 3);
+      fill("#284858", x + 10, 29, 13, 11);
+      if (col % 2 === 0) fill("#73dce1", x + 12, 32, 9, 3);
+      dot("#d1ddd5", x + 7, 52);
+      dot("#324c5c", x + 25, 52);
+    }
+    fill("#243d50", 0, 59, 128, 5);
+  } else {
+    const isDark = kind === "machine-dark";
+    const isFascia = kind === "fascia";
+    const base = isDark ? "#4f6575" : isFascia ? "#657e8c" : "#b5c4c2";
+    const shade = isDark ? "#2c4354" : isFascia ? "#3e5a6a" : "#788f98";
+    const light = isDark ? "#8298a2" : isFascia ? "#9bafb2" : "#d7dfd8";
+    fill(base, 0, 0, 64, 64);
+    for (let y = 0; y < 64; y += 16) {
+      fill(shade, 0, y, 64, 3);
+      fill(light, 0, y + 3, 64, 2);
+      for (let x = 7; x < 64; x += 16) {
+        dot(shade, x, y + 8);
+        dot(light, x + 2, y + 8);
+      }
+    }
+    fill(shade, 4, 53, 22, 3);
+    fill(light, 36, 22, 16, 3);
+    if (isFascia) {
+      fill("#263f51", 8, 7, 20, 6);
+      fill("#6cced6", 11, 9, 14, 2);
+      fill("#334f60", 39, 39, 17, 8);
+    }
   }
-  const texture = new THREE.TextureLoader().load(
-    path,
-    (loadedTexture) => {
-      loadedTexture.needsUpdate = true;
-      canvas.dataset[`${key}Texture`] = `loaded:${loadedTexture.image.width}x${loadedTexture.image.height}`;
-      settleTextureLoad();
-    },
-    undefined,
-    () => {
-      canvas.dataset[`${key}Texture`] = "error";
-      settleTextureLoad();
-    },
-  );
+
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.name = `pixel-workshop-${kind}`;
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
   texture.anisotropy = 1;
   texture.minFilter = THREE.NearestMipmapNearestFilter;
   texture.magFilter = THREE.NearestFilter;
+  canvas.dataset[`${kind.replace("-", "")}Texture`] = `procedural:${textureCanvas.width}x${textureCanvas.height}`;
   return texture;
 }
 
@@ -1809,9 +1868,9 @@ function addMesh(
     const outline = new THREE.LineSegments(
       new THREE.EdgesGeometry(geometry, 28),
       new THREE.LineBasicMaterial({
-        color: 0x211f18,
+        color: 0x203747,
         transparent: true,
-        opacity: 0.5,
+        opacity: 0.34,
       }),
     );
     outline.renderOrder = 2;
@@ -1823,15 +1882,15 @@ function addMesh(
 function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   const group = new THREE.Group();
   group.userData.kind = kind;
-  const dark = material(0x707b8e, {
+  const dark = material(0x6f8796, {
     map: paintedMachineDarkTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.018,
     roughness: 0.78,
     metalness: 0.24,
   });
-  const ink = material(0x202636, { roughness: 0.72, metalness: 0.25 });
-  const cream = material(0xc9ccd3, {
+  const ink = material(0x263e50, { roughness: 0.72, metalness: 0.25 });
+  const cream = material(0xd7e0da, {
     map: paintedMachineNeutralTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.012,
@@ -1845,18 +1904,18 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
     roughness: 0.68,
     metalness: 0.18,
   });
-  const glass = material(0x6ed5de, {
-    emissive: 0x176878,
-    emissiveIntensity: 1.8,
+  const glass = material(0x76e6dc, {
+    emissive: 0x207f85,
+    emissiveIntensity: 1.55,
     roughness: 0.25,
   });
 
   const contactShadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.68, 24),
+    new THREE.CircleGeometry(0.7, 8),
     new THREE.MeshBasicMaterial({
-      color: 0x0c1722,
+      color: 0x153342,
       transparent: true,
-      opacity: 0.26,
+      opacity: 0.18,
       depthWrite: false,
     }),
   );
@@ -1866,7 +1925,7 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   group.add(contactShadow);
 
   const selectionRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.57, 0.66, 32),
+    new THREE.RingGeometry(0.59, 0.68, 8),
     new THREE.MeshBasicMaterial({
       color: componentDefinitions[kind].color,
       transparent: true,
@@ -1880,10 +1939,16 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   selectionRing.userData.motion = "selectionRing";
   group.add(selectionRing);
 
-  addMesh(group, new THREE.BoxGeometry(1.08, 0.12, 1.08), dark, [0, 0.08, 0]);
-  addMesh(group, new THREE.BoxGeometry(0.93, 0.09, 0.93), cream, [0, 0.17, 0]);
-  for (const [x, z] of [[-0.43, -0.43], [0.43, -0.43], [-0.43, 0.43], [0.43, 0.43]] as const) {
-    addMesh(group, new THREE.CylinderGeometry(0.035, 0.045, 0.08, 8), accent, [x, 0.25, z]);
+  // Every service is assembled on the same octagonal hot-swap dock. The shared
+  // port language makes machines read as parts of one system, while the upper
+  // silhouettes stay distinct enough to identify without their labels.
+  addMesh(group, new THREE.CylinderGeometry(0.62, 0.7, 0.13, 8), dark, [0, 0.08, 0]);
+  addMesh(group, new THREE.CylinderGeometry(0.54, 0.61, 0.1, 8), cream, [0, 0.19, 0]);
+  for (const [x, z, rotation] of [
+    [0, 0.58, 0], [0.58, 0, Math.PI / 2], [0, -0.58, 0], [-0.58, 0, Math.PI / 2],
+  ] as const) {
+    addMesh(group, new THREE.BoxGeometry(0.19, 0.13, 0.08), ink, [x, 0.24, z], [0, rotation, 0]);
+    addMesh(group, new THREE.BoxGeometry(0.09, 0.035, 0.014), glass, [x, 0.25, z + (z >= 0 ? 0.048 : -0.048)], [0, rotation, 0]);
   }
 
   if (kind === "api") {
@@ -2149,16 +2214,16 @@ function setBrandItem(kind: ComponentKind, animate = true) {
 }
 
 function addBoardDetails() {
-  const dark = material(0x353b4c, { roughness: 0.68, metalness: 0.4 });
-  const blue = material(0x718aa0, { roughness: 0.61, metalness: 0.2 });
-  const grate = material(0x292e3c, { roughness: 0.74, metalness: 0.52 });
-  const seam = material(0x3e5965, {
+  const dark = material(0x385365, { roughness: 0.68, metalness: 0.4 });
+  const blue = material(0x7ba5b0, { roughness: 0.61, metalness: 0.2 });
+  const grate = material(0x2f4959, { roughness: 0.74, metalness: 0.52 });
+  const seam = material(0x416d74, {
     roughness: 0.82,
     metalness: 0.28,
     transparent: true,
-    opacity: 0.1,
+    opacity: 0.2,
   });
-  const patch = material(0xa1acb8, { roughness: 0.92, metalness: 0.12 });
+  const patch = casingMaterial(0x7d9e9e, 0.92, 0.1, 0.008);
 
   for (let col = 1; col < columns; col += 1) {
     addMesh(
@@ -2191,20 +2256,21 @@ function addBoardDetails() {
   exchange.rotation.y = -0.055;
   boardGroup.add(exchange);
 
-  const warmMetal = casingMaterial(0xadb3bd, 0.88, 0.1, 0.012);
-  const sageMetal = casingMaterial(0x82a3a5, 0.82, 0.15, 0.014);
-  const paleMetal = casingMaterial(0xc1c5ca, 0.9, 0.06, 0.01);
-  const safetyOrange = casingMaterial(0xc57a4e, 0.8, 0.15, 0.012);
-  const neutralGrate = material(0x303440, { roughness: 0.82, metalness: 0.34 });
+  const warmMetal = casingMaterial(0xb8c8c5, 0.88, 0.1, 0.012);
+  const sageMetal = casingMaterial(0x82b6b2, 0.82, 0.15, 0.014);
+  const paleMetal = casingMaterial(0xd4ded8, 0.9, 0.06, 0.01);
+  const signalBlue = casingMaterial(0x55adc0, 0.8, 0.15, 0.012);
+  const signalViolet = casingMaterial(0x7c91c7, 0.8, 0.13, 0.012);
+  const neutralGrate = material(0x385260, { roughness: 0.82, metalness: 0.34 });
 
   addMesh(exchange, new THREE.CylinderGeometry(1.08, 1.08, 0.07, 48), warmMetal, [0, 0.035, 0]);
-  addMesh(exchange, new THREE.TorusGeometry(0.93, 0.09, 8, 48), safetyOrange, [0, 0.105, 0], [Math.PI / 2, 0, 0]);
+  addMesh(exchange, new THREE.TorusGeometry(0.93, 0.09, 8, 48), signalBlue, [0, 0.105, 0], [Math.PI / 2, 0, 0]);
   addMesh(exchange, new THREE.CylinderGeometry(0.64, 0.64, 0.075, 40), sageMetal, [0, 0.105, 0]);
 
   // Separate ring plates make it look serviceable instead of like one smooth disc.
   for (let segment = 0; segment < 6; segment += 1) {
     const start = segment * (Math.PI * 2 / 6) + 0.045;
-    const segmentMaterial = segment % 2 === 0 ? safetyOrange : paleMetal;
+    const segmentMaterial = segment % 2 === 0 ? signalBlue : signalViolet;
     addMesh(
       exchange,
       new THREE.RingGeometry(0.68, 0.86, 24, 1, start, Math.PI * 2 / 6 - 0.09),
@@ -2286,18 +2352,18 @@ function addBoardDetails() {
 }
 
 function addEnvironment() {
-  const dark = material(0x262a36, { roughness: 0.7, metalness: 0.46 });
-  const screen = material(0x71dce3, { emissive: 0x1b6f7d, emissiveIntensity: 1.65, roughness: 0.25 });
-  const propDark = casingMaterial(0x555d70, 0.82, 0.28, 0.018);
-  const propBlue = casingMaterial(0x69869a, 0.74, 0.2, 0.016);
-  const propSage = casingMaterial(0x739294, 0.8, 0.14, 0.014);
-  const propCream = casingMaterial(0xacb1bb, 0.84, 0.09, 0.012);
-  const propAccent = casingMaterial(0xc27752, 0.7, 0.22, 0.014);
-  const propTank = casingMaterial(0x7d8ea5, 0.78, 0.22, 0.018);
-  const fasciaDark = fasciaMaterial(0x42495b, 0.86, 0.28, 0.022);
-  const fasciaBlue = fasciaMaterial(0x5a667b, 0.82, 0.22, 0.018);
+  const dark = material(0x354c5d, { roughness: 0.7, metalness: 0.42 });
+  const screen = material(0x7ce8df, { emissive: 0x217b84, emissiveIntensity: 1.45, roughness: 0.25 });
+  const propDark = casingMaterial(0x60798b, 0.82, 0.24, 0.014);
+  const propBlue = casingMaterial(0x79a3b4, 0.74, 0.18, 0.014);
+  const propSage = casingMaterial(0x83aaa5, 0.8, 0.12, 0.012);
+  const propCream = casingMaterial(0xc8d2ce, 0.84, 0.08, 0.01);
+  const propAccent = casingMaterial(0x61bdb5, 0.7, 0.18, 0.012);
+  const propTank = casingMaterial(0x8cb8c2, 0.78, 0.18, 0.014);
+  const fasciaDark = fasciaMaterial(0x526d80, 0.86, 0.24, 0.016);
+  const fasciaBlue = fasciaMaterial(0x7893a0, 0.82, 0.18, 0.014);
   const paintedBulkhead = new THREE.MeshBasicMaterial({
-    color: 0x8994a2,
+    color: 0xb8cbc8,
     map: paintedWallTexture,
     side: THREE.DoubleSide,
   });
@@ -2329,9 +2395,9 @@ function addEnvironment() {
   }
   addMaintenanceGantry(propDark, propSage, propCream, screen, propAccent);
 
-  const coolLamp = material(0x9fddea, {
-    emissive: 0x2a7d96,
-    emissiveIntensity: 1.7,
+  const coolLamp = material(0xb6f3ec, {
+    emissive: 0x368a94,
+    emissiveIntensity: 1.5,
     roughness: 0.22,
   });
   for (const [x, z, rotation] of [
@@ -2341,7 +2407,7 @@ function addEnvironment() {
     addMesh(environmentGroup, new THREE.BoxGeometry(0.78, 0.16, 0.09), coolLamp, [x, 1.55, z], [0, rotation, 0]);
   }
   for (const [x, z] of [[-3.7, -4.1], [0, -4.1], [3.7, -4.1]] as const) {
-    const lampLight = new THREE.PointLight(0x64bfd2, 4.8, 4.6, 2);
+    const lampLight = new THREE.PointLight(0x8ce8df, 5.6, 5.2, 2);
     lampLight.position.set(x, 1.5, z);
     environmentGroup.add(lampLight);
   }
@@ -2356,23 +2422,23 @@ function addEnvironment() {
   addCable([
     new THREE.Vector3(-5.9, 0.3, -2.9), new THREE.Vector3(-5.5, 0.24, -1.6),
     new THREE.Vector3(-5.1, 0.2, -0.2), new THREE.Vector3(-4.6, 0.17, 0.7),
-  ], 0xb86455, 0.055);
+  ], 0x6cc6aa, 0.055);
   addCable([
     new THREE.Vector3(5.95, 0.28, 2.9), new THREE.Vector3(5.2, 0.2, 2.35),
     new THREE.Vector3(4.3, 0.17, 2.25), new THREE.Vector3(3.7, 0.16, 2.6),
-  ], 0x4d96ab, 0.045);
+  ], 0x64b8d0, 0.045);
   addCable([
     new THREE.Vector3(-2.5, 0.23, 4.75), new THREE.Vector3(-1.6, 0.17, 4.1),
     new THREE.Vector3(-0.8, 0.15, 3.95), new THREE.Vector3(-0.25, 0.15, 3.35),
-  ], 0x696080, 0.07);
+  ], 0x8b83bd, 0.07);
 
   // Tall translucent coolant tank on the right, echoing the reference silhouette.
   addMesh(environmentGroup, new THREE.CylinderGeometry(0.64, 0.72, 2.65, 22), propTank, [5.72, 1.05, 0.35]);
-  addMesh(environmentGroup, new THREE.CylinderGeometry(0.51, 0.56, 1.75, 22), material(0x7e9fb2, {
+  addMesh(environmentGroup, new THREE.CylinderGeometry(0.51, 0.56, 1.75, 22), material(0x9bd0cc, {
     transparent: true,
     opacity: 0.5,
-    emissive: 0x294d63,
-    emissiveIntensity: 0.42,
+    emissive: 0x386e77,
+    emissiveIntensity: 0.32,
     roughness: 0.22,
   }), [5.72, 1.0, 0.35]);
   for (const y of [0.2, 1.05, 1.9]) {
@@ -2382,18 +2448,27 @@ function addEnvironment() {
   addMesh(environmentGroup, new THREE.BoxGeometry(0.3, 1.02, 0.08), propDark, [5.72, 1.02, 0.915]);
   addMesh(environmentGroup, new THREE.BoxGeometry(0.17, 0.76, 0.035), screen, [5.72, 1.02, 0.975]);
 
-  // Dark service tunnel on the left adds an asymmetric, illustrated room edge.
-  addMesh(environmentGroup, new THREE.CircleGeometry(1.42, 30), material(0x11141d, { roughness: 1 }), [-6.34, 0.75, -1.35], [0, Math.PI / 2, 0]);
-  for (let index = 0; index < 12; index += 1) {
-    const angle = (index / 12) * Math.PI * 2;
-    const rock = addMesh(
-      environmentGroup,
-      new THREE.DodecahedronGeometry(0.28 + pseudoRandom(index + 400) * 0.28, 0),
-      index % 3 === 0 ? propBlue : index % 3 === 1 ? propDark : propSage,
-      [-6.22, 0.78 + Math.sin(angle) * 1.25, -1.35 + Math.cos(angle) * 1.25],
-    );
-    rock.rotation.set(angle, pseudoRandom(index + 450) * 2, angle * 0.4);
+  // A legible fiber patch station replaces the old black service tunnel. It
+  // explains the room as a network workshop and keeps this edge useful and bright.
+  const uplink = new THREE.Group();
+  uplink.position.set(-6.08, 0.86, -1.35);
+  uplink.rotation.y = Math.PI / 2;
+  environmentGroup.add(uplink);
+  addMesh(uplink, new THREE.BoxGeometry(2.7, 1.9, 0.52), propDark, [0, 0, 0]);
+  addMesh(uplink, new THREE.BoxGeometry(2.36, 1.55, 0.12), propCream, [0, 0, 0.32]);
+  addMesh(uplink, new THREE.BoxGeometry(1.8, 0.42, 0.08), dark, [0, 0.42, 0.41]);
+  addMesh(uplink, new THREE.BoxGeometry(1.5, 0.2, 0.035), screen, [0, 0.42, 0.47]);
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 6; col += 1) {
+      addMesh(
+        uplink,
+        new THREE.BoxGeometry(0.18, 0.12, 0.05),
+        (row + col) % 3 === 0 ? screen : propBlue,
+        [-0.65 + col * 0.26, 0.03 - row * 0.22, 0.43],
+      );
+    }
   }
+  addMesh(uplink, new THREE.BoxGeometry(2.45, 0.12, 0.68), propAccent, [0, -0.86, 0.08]);
 
   addCrateStack(-5.7, 3.55, 0.1, 3, propCream, propAccent, propDark);
   addCrateStack(5.55, -3.35, -0.08, 3, propSage, propAccent, propDark);
@@ -2465,7 +2540,7 @@ function addPlatformUndercarriage(
 
   const ribMaterial = casing;
   const ribCapMaterial = casingCap;
-  const recessMaterial = material(0x0c1220, { roughness: 0.86, metalness: 0.3 });
+  const recessMaterial = material(0x294657, { roughness: 0.86, metalness: 0.3 });
   for (let index = 0; index < 9; index += 1) {
     const x = -6.7 + index * 1.67;
     for (const z of [-6.24, 6.24]) {
@@ -2494,9 +2569,9 @@ function addPlatformUndercarriage(
     addMesh(environmentGroup, new THREE.CylinderGeometry(0.26, 0.31, 0.12, 10), casingCap, [x, -1.49, z]);
   }
 
-  const underglow = material(0x55c9dc, {
-    emissive: 0x1a668b,
-    emissiveIntensity: 2.2,
+  const underglow = material(0x72dfd8, {
+    emissive: 0x257c8d,
+    emissiveIntensity: 1.8,
     roughness: 0.2,
   });
   addMesh(environmentGroup, new THREE.BoxGeometry(8.2, 0.045, 0.06), underglow, [1.7, -1.13, 5.48]);
@@ -2613,7 +2688,7 @@ function updateCameraOrbit(delta: number) {
     cameraOrbitHeight,
     Math.cos(cameraAzimuth) * cameraOrbitRadius,
   );
-  camera.lookAt(0, 0.12, 0);
+  camera.lookAt(0, 0.3, 0);
   canvas.dataset.cameraAzimuth = cameraAzimuth.toFixed(3);
 }
 
@@ -5978,9 +6053,7 @@ updateMissionContent();
 updateUi();
 updateTelemetry();
 animate();
-void Promise.all(machineTextureLoads).then(() => {
-  requestAnimationFrame(renderPartPreviews);
-});
+requestAnimationFrame(renderPartPreviews);
 
 function placeDemoMachinesUntil(kind: ComponentKind, requiredCount: number) {
   for (let row = 0; row < rows && nodes.filter((node) => node.kind === kind).length < requiredCount; row += 1) {
