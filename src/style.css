@@ -259,6 +259,15 @@ button,
   transition-timing-function: ease-in;
 }
 
+.mission-card[data-incident="true"] {
+  opacity: 0;
+  transform: translate(12px, -8px);
+  filter: blur(4px);
+  pointer-events: none;
+  transition-duration: 150ms;
+  transition-timing-function: ease-in;
+}
+
 .mission-heading {
   display: flex;
   align-items: center;
@@ -2515,7 +2524,7 @@ button,
 
 .incident-panel {
   position: absolute;
-  top: 246px;
+  top: 20px;
   right: 22px;
   z-index: 7;
   width: 320px;
@@ -2652,7 +2661,7 @@ button,
   .phase-option { min-height: 49px; }
   .phase-number { width: 32px; height: 32px; }
   .phase-brief { padding: 9px; }
-  .incident-panel { top: 218px; right: 372px; }
+  .incident-panel { top: 14px; right: 16px; }
   .phase-briefing-overlay { padding: 14px; }
   .phase-briefing-card {
     max-height: calc(100vh - 28px);

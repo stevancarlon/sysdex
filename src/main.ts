@@ -960,6 +960,8 @@ let incidentResolution = "";
 let incidentResponseRequiredKind: ComponentKind | null = null;
 let incidentResponseRequiredCount = 0;
 let incidentBudgetCredit = 0;
+let incidentTopologyFingerprintAtTrigger = "";
+const incidentAffectedNodeIds = new Set<number>();
 
 function configSpend(configs: Set<ConfigId> = activeConfigs) {
   return configDefinitions.reduce((sum, config) => sum + (configs.has(config.id) ? config.cost : 0), 0);
@@ -2369,6 +2371,7 @@ function removeNode(node: PlacedComponent) {
   node.label.remove();
   selectNode(null);
   rebuildConnections();
+  checkTopologyIncidentResponse();
   updateUi();
   updateTelemetry();
   showToast(`${definition.label} removed. $${definition.cost} returned to the laboratory budget.`);
@@ -2584,15 +2587,18 @@ function rebuildConnections() {
     return;
   }
 
-  const loadBalancers = nodes.filter((node) => node.kind === "loadBalancer");
-  const apiNodes = nodes.filter((node) => node.kind === "api");
-  const redisNodes = nodes.filter((node) => node.kind === "redis");
-  const postgresNodes = nodes.filter((node) => node.kind === "postgres");
-  const queueNodes = nodes.filter((node) => node.kind === "queue");
-  const workers = nodes.filter((node) => node.kind === "worker");
-  const geoNodes = nodes.filter((node) => node.kind === "geoIndex");
-  const objectStorageNodes = nodes.filter((node) => node.kind === "objectStorage");
-  const cdnNodes = nodes.filter((node) => node.kind === "cdn");
+  const routableNodes = nodes
+    .filter((node) => node.state !== "failed")
+    .sort((left, right) => Number(incidentAffectedNodeIds.has(left.id)) - Number(incidentAffectedNodeIds.has(right.id)));
+  const loadBalancers = routableNodes.filter((node) => node.kind === "loadBalancer");
+  const apiNodes = routableNodes.filter((node) => node.kind === "api");
+  const redisNodes = routableNodes.filter((node) => node.kind === "redis");
+  const postgresNodes = routableNodes.filter((node) => node.kind === "postgres");
+  const queueNodes = routableNodes.filter((node) => node.kind === "queue");
+  const workers = routableNodes.filter((node) => node.kind === "worker");
+  const geoNodes = routableNodes.filter((node) => node.kind === "geoIndex");
+  const objectStorageNodes = routableNodes.filter((node) => node.kind === "objectStorage");
+  const cdnNodes = routableNodes.filter((node) => node.kind === "cdn");
 
   const primaryPostgres = postgresNodes[0];
   const usesGeoPath = currentPhase.workload === "matching" || currentPhase.workload === "dispatch";
@@ -2809,6 +2815,7 @@ function restoreAutomaticTopology() {
   wiringSource = null;
   hoveredConnection = null;
   rebuildConnections();
+  checkTopologyIncidentResponse();
   updateUi();
   updateTelemetry();
   canvas.dataset.mode = "idle";
@@ -2878,6 +2885,7 @@ function removeAuthoredConnection(connection: Connection) {
   const from = nodes.find((node) => node.id === removed.fromId);
   const to = nodes.find((node) => node.id === removed.toId);
   rebuildConnections();
+  checkTopologyIncidentResponse();
   updateTelemetry();
   showToast(`${from ? contextualComponentLabel(from.kind) : "Source"} → ${to ? contextualComponentLabel(to.kind) : "destination"} cable removed.`);
 }
@@ -2894,7 +2902,7 @@ function buildLiveSimulationGraph(
         : node.kind === "postgres" && activeConfigs.has("walTuning")
           ? 1.25
           : 1;
-      const affectedByIncident = incidentOpen && node.kind === currentPhase.incident.affectedKind;
+      const affectedByIncident = incidentOpen && incidentAffectedNodeIds.has(node.id);
       return {
         id: String(node.id),
         kind: node.kind,
@@ -3359,7 +3367,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
     runButton.dataset.ready = "false";
     runButton.textContent = incidentResponseRequiredKind
       ? `Install 1 more ${componentDefinitions[incidentResponseRequiredKind].label}`
-      : "Automated recovery active";
+      : "Restore incident envelope";
   } else if (isRunning && incidentMode === "recovering") {
     runButton.disabled = true;
     runButton.dataset.ready = "false";
@@ -3504,16 +3512,31 @@ function resetIncident() {
   incidentResolution = "";
   incidentResponseRequiredKind = null;
   incidentResponseRequiredCount = 0;
+  incidentTopologyFingerprintAtTrigger = "";
+  incidentAffectedNodeIds.clear();
   incidentPanel.dataset.visible = "false";
   incidentPanel.dataset.status = "active";
   incidentPanel.dataset.tutorial = "false";
   incidentTask.hidden = true;
   incidentTask.dataset.complete = "false";
+  missionCard.dataset.incident = "false";
   for (const node of nodes) node.state = "healthy";
 }
 
-function checkTopologyIncidentResponse() {
-  if (incidentMode !== "active" || !incidentResponseRequiredKind) return;
+function topologyFingerprint() {
+  const nodeSignature = nodes
+    .map((node) => `${node.id}:${node.kind}`)
+    .sort()
+    .join("|");
+  const edgeSignature = connections
+    .map((connection) => `${connection.from.id}>${connection.to.id}:${connection.mode}`)
+    .sort()
+    .join("|");
+  return `${nodeSignature}::${edgeSignature}`;
+}
+
+function checkTutorialIncidentResponse() {
+  if (!incidentResponseRequiredKind) return;
   const installedCount = nodes.filter((node) => node.kind === incidentResponseRequiredKind).length;
   const requiredCount = incidentResponseRequiredCount;
   const definition = componentDefinitions[incidentResponseRequiredKind];
@@ -3542,6 +3565,62 @@ function checkTopologyIncidentResponse() {
     ? "The Load Balancer has added the replica to its request pool. Watch capacity recover."
     : `The new ${definition.role.toLowerCase()} has joined the live topology. Watch the affected tier recover.`;
   beginIncidentRecovery(false, `New ${definition.label} capacity joined the live topology`);
+}
+
+function checkTopologyIncidentResponse(allowExistingTopology = false) {
+  if (incidentMode !== "active") return;
+  if (currentPhaseIndex === 0) {
+    checkTutorialIncidentResponse();
+    return;
+  }
+  const topologyChanged = topologyFingerprint() !== incidentTopologyFingerprintAtTrigger;
+  const recoveryThreshold = targetRps;
+  const liveIncidentDemand = Math.round(targetRps * currentPhase.incident.loadMultiplier);
+  const metrics = calculateMetrics(recoveryThreshold);
+  const topology = "topology" in metrics ? metrics.topology : null;
+  const structurallyHealthy = metrics.hasCore
+    && metrics.capacity >= recoveryThreshold
+    && topology?.hasResponsePath === true
+    && topology.backgroundHealthy;
+
+  if ((allowExistingTopology || topologyChanged) && structurallyHealthy) {
+    incidentTask.dataset.complete = "true";
+    incidentTaskCount.textContent = "Recovery threshold met";
+    incidentTaskTitle.textContent = topologyChanged
+      ? "Topology mitigation accepted"
+      : "Existing redundancy absorbed the failure";
+    incidentTaskDescription.textContent = topologyChanged
+      ? "The revised graph restores baseline throughput and required background delivery, so controlled recovery can begin."
+      : "Healthy connected capacity preserved the recovery envelope; no emergency purchase was required.";
+    incidentTaskProgress.style.scale = "1 1";
+    beginIncidentRecovery(false, topologyChanged
+      ? "Player-authored topology restored the recovery envelope"
+      : "Existing redundancy absorbed the failed machine");
+    return;
+  }
+
+  const capacityRatio = Math.min(1, metrics.capacity / Math.max(1, recoveryThreshold));
+  incidentTask.dataset.complete = "false";
+  incidentTaskProgress.style.scale = `${Math.max(0.04, capacityRatio)} 1`;
+  if (!metrics.hasCore || topology?.hasResponsePath === false) {
+    incidentTaskCount.textContent = "Route incomplete";
+    incidentTaskTitle.textContent = "Restore a complete response route";
+    incidentTaskDescription.textContent = "The failure cut a required directed path. Reroute a healthy machine or attach spare capacity; installed but disconnected hardware does nothing.";
+  } else if (topology && !topology.backgroundHealthy) {
+    incidentTaskCount.textContent = topology.backgroundMode === "asynchronous"
+      ? `+${Math.round(topology.backgroundBacklogRps).toLocaleString("en-US")}/s backlog`
+      : "Background route missing";
+    incidentTaskTitle.textContent = "Restore the background contract";
+    incidentTaskDescription.textContent = "User traffic alone is not enough. Reconnect or scale the asynchronous path until its arrival rate can be drained.";
+  } else {
+    const structuralBottleneck = topology?.bottleneckKind as ComponentKind | null;
+    const bottleneck = structuralBottleneck
+      ? contextualComponentLabel(structuralBottleneck)
+      : "connected path";
+    incidentTaskCount.textContent = `${Math.round(metrics.capacity).toLocaleString("en-US")} / ${recoveryThreshold.toLocaleString("en-US")} r/s recovery`;
+    incidentTaskTitle.textContent = `Relieve ${bottleneck}`;
+    incidentTaskDescription.textContent = `Restore the baseline envelope to start recovery while ${liveIncidentDemand.toLocaleString("en-US")} r/s remains live. Reroute a spare, scale any limiting tier, or redesign the path.`;
+  }
 }
 
 function topologyIncidentInstruction(kind: ComponentKind) {
@@ -3577,10 +3656,13 @@ function triggerIncident() {
   const targets = incident.affectedKind
     ? nodes.filter((node) => node.kind === incident.affectedKind && node.state === "healthy")
     : [];
+  incidentAffectedNodeIds.clear();
+  for (const affectedNode of targets) incidentAffectedNodeIds.add(affectedNode.id);
   const target = targets.length > 0 ? targets[targets.length - 1] : null;
   if (target) {
     target.state = "failed";
     incidentTargetNodeId = target.id;
+    if (topologyMode === "automatic") rebuildConnections();
   }
 
   incidentCode.textContent = `SEV-${currentPhase.index < 2 ? "2" : "1"} · ${incident.code}`;
@@ -3597,6 +3679,7 @@ function triggerIncident() {
   incidentPanel.dataset.status = "active";
   incidentPanel.dataset.tutorial = String(currentPhaseIndex === 0);
   incidentPanel.dataset.visible = "true";
+  missionCard.dataset.incident = "true";
 
   const automaticPolicy = currentPhaseIndex > 0 ? policy : null;
   if (automaticPolicy) {
@@ -3609,7 +3692,7 @@ function triggerIncident() {
     incidentTaskDescription.textContent = "The resilience policy you configured before the drill detected the failure and is executing automatically.";
     incidentTaskProgress.style.scale = "1 1";
     beginIncidentRecovery(true);
-  } else {
+  } else if (currentPhaseIndex === 0) {
     const responseKind = incident.affectedKind ?? "api";
     const instruction = topologyIncidentInstruction(responseKind);
     const installedCount = nodes.filter((node) => node.kind === responseKind).length;
@@ -3626,11 +3709,28 @@ function triggerIncident() {
     incidentTaskDescription.textContent = `$${componentDefinitions[responseKind].cost} emergency budget added. Select ${componentDefinitions[responseKind].label} in the catalogue, then install it on a free floor tile.`;
     checkTopologyIncidentResponse();
     updateUi();
+  } else {
+    incidentResponseRequiredKind = null;
+    incidentResponseRequiredCount = 0;
+    incidentBudgetCredit += 600;
+    incidentTopologyFingerprintAtTrigger = topologyFingerprint();
+    incidentStatus.textContent = "Stabilize by topology · live";
+    incidentPrompt.textContent = `${incident.operatorPrompt} Any connected design that restores the recovery envelope is valid.`;
+    incidentTask.hidden = false;
+    incidentTask.dataset.complete = "false";
+    incidentTaskCount.textContent = "Evaluate live graph";
+    incidentTaskTitle.textContent = "Restore the recovery envelope";
+    incidentTaskDescription.textContent = "$600 incident reserve released. Restore baseline throughput and required background delivery; full SLO certification follows after recovery.";
+    incidentTaskProgress.style.scale = "0.04 1";
+    checkTopologyIncidentResponse(true);
+    updateUi();
   }
   statusLight.textContent = "Incident";
   showToast(automaticPolicy
     ? `${automaticPolicy.label} detected ${incident.code} and started recovery.`
-    : `Incident ${incident.code}: ${incidentTaskTitle.textContent}.`);
+    : !isIncidentAwaitingResponse()
+      ? `${incident.code}: the existing design absorbed the failure and entered recovery.`
+      : `Incident ${incident.code}: restore the recovery envelope by any valid topology change.`);
 }
 
 function beginIncidentRecovery(automated: boolean, resolutionOverride?: string) {
@@ -3645,6 +3745,7 @@ function beginIncidentRecovery(automated: boolean, resolutionOverride?: string) 
   incidentResolution = resolutionOverride ?? (automated ? policy!.resolution : currentPhase.incident.manualAction);
   const target = nodes.find((node) => node.id === incidentTargetNodeId);
   if (target) target.state = "degraded";
+  rebuildConnections();
   incidentPanel.dataset.status = "recovering";
   incidentStatus.textContent = "Mitigation running";
   incidentPrompt.textContent = currentPhaseIndex === 0
@@ -3662,13 +3763,17 @@ function updateIncident(delta: number) {
   incidentMode = "resolved";
   const target = nodes.find((node) => node.id === incidentTargetNodeId);
   if (target) target.state = "healthy";
+  rebuildConnections();
   incidentPanel.dataset.status = "resolved";
   incidentStatus.textContent = "Resolved";
   incidentPrompt.textContent = `${incidentResolution}. Capacity and error rates have returned to their normal envelope.`;
   showToast(`Incident resolved: ${currentPhase.incident.title}. Hold the SLO to complete certification.`);
   const resolvedPhase = currentPhaseIndex;
   window.setTimeout(() => {
-    if (incidentMode === "resolved" && currentPhaseIndex === resolvedPhase) incidentPanel.dataset.visible = "false";
+    if (incidentMode === "resolved" && currentPhaseIndex === resolvedPhase) {
+      incidentPanel.dataset.visible = "false";
+      missionCard.dataset.incident = "false";
+    }
   }, 2200);
 }
 
@@ -4562,14 +4667,20 @@ if (demoMode !== null) {
       for (let second = 0; second < testTimeLimit + 1; second += 1) {
         updateTest(1);
         if (demoMode === "certified" && isIncidentAwaitingResponse()) {
-          const responseKind = incidentResponseRequiredKind;
-          const responseGrid = ([
-            { col: 7, row: 5 },
-            { col: 7, row: 4 },
-            { col: 7, row: 2 },
-            { col: 5, row: 3 },
-          ] as GridPosition[]).find((grid) => !isOccupied(grid));
-          if (responseKind && responseGrid) placeComponent(responseKind, responseGrid);
+          const responseMetrics = calculateMetrics(targetRps);
+          const responseTopology = "topology" in responseMetrics ? responseMetrics.topology : null;
+          const responseKind = incidentResponseRequiredKind
+            ?? (responseTopology?.hasResponsePath === false
+              ? currentPhase.incident.affectedKind
+              : responseTopology && !responseTopology.backgroundHealthy
+                ? responseTopology.backgroundBottleneckKind as ComponentKind | null
+                : responseTopology && responseTopology.latency > latencySlo && !responseTopology.cacheOperational
+                  ? "redis"
+                  : responseTopology?.bottleneckKind as ComponentKind | null)
+            ?? currentPhase.incident.affectedKind;
+          if (responseKind) {
+            placeDemoMachinesUntil(responseKind, nodes.filter((node) => node.kind === responseKind).length + 1);
+          }
         }
       }
       updateTelemetry();
