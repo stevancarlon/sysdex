@@ -62,6 +62,7 @@ type PlacedComponent = {
   group: THREE.Group;
   grid: GridPosition;
   label: HTMLDivElement;
+  visual: HTMLImageElement;
   state: "healthy" | "degraded" | "failed";
 };
 
@@ -414,6 +415,7 @@ function formatErrorPercent(value: number, contract = value) {
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="game-shell">
     <canvas id="game-canvas" aria-label="Isometric system design workspace"></canvas>
+    <div class="component-visual-layer" id="component-visual-layer" aria-hidden="true"></div>
 
     <div class="start-overlay" id="start-overlay" data-visible="true" aria-hidden="false">
       <section class="start-card" role="dialog" aria-modal="true" aria-labelledby="start-title">
@@ -822,6 +824,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas")!;
+const componentVisualLayer = document.querySelector<HTMLDivElement>("#component-visual-layer")!;
 canvas.dataset.reducedMotion = String(prefersReducedMotion);
 reducedMotionQuery.addEventListener("change", (event) => {
   prefersReducedMotion = event.matches;
@@ -1043,9 +1046,9 @@ renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 3.15;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
-camera.position.set(8.8, 16.2, 10.6);
-camera.lookAt(0, 0.3, 0);
-camera.zoom = 1.18;
+camera.position.set(3.2, 10.4, 17.4);
+camera.lookAt(0, 0.2, 0);
+camera.zoom = 1.2;
 camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1136,7 +1139,7 @@ const tileMeshes: THREE.Mesh[] = [];
 const boardActivityMaterials: THREE.MeshStandardMaterial[] = [];
 const workshopPulseMaterials: THREE.MeshStandardMaterial[] = [];
 const workshopPulseLights: THREE.PointLight[] = [];
-const workshopRotors: THREE.Object3D[] = [];
+const workshopPortalGlows: THREE.MeshBasicMaterial[] = [];
 const paintedFloorTexture = createPixelWorkshopTexture("floor");
 const paintedWallTexture = createPixelWorkshopTexture("wall");
 const paintedMachineDarkTexture = createPixelWorkshopTexture("machine-dark");
@@ -1293,6 +1296,7 @@ let draggedNode: PlacedComponent | null = null;
 let pointerDownPosition = { x: 0, y: 0 };
 let nodeHasMoved = false;
 let ghost: THREE.Group | null = null;
+let ghostVisual: HTMLImageElement | null = null;
 let placementTile: THREE.Mesh | null = null;
 let isRunning = false;
 let testPhase: TestPhase = "idle";
@@ -1859,6 +1863,34 @@ function createSurfaceTexture(base: string, dark: string, light: string) {
   return texture;
 }
 
+function createWorkshopLabelTexture(lines: string[]) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 128;
+  textureCanvas.height = 56;
+  const context = textureCanvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = "#092735";
+  context.fillRect(0, 0, 128, 56);
+  context.fillStyle = "#315869";
+  context.fillRect(3, 3, 122, 50);
+  context.fillStyle = "#123b49";
+  context.fillRect(6, 6, 116, 44);
+  context.strokeStyle = "#82eee4";
+  context.lineWidth = 2;
+  context.strokeRect(7, 7, 114, 42);
+  context.fillStyle = "#b7fff0";
+  context.font = "bold 17px monospace";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  lines.forEach((line, index) => context.fillText(line, 64, 20 + index * 18));
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
 function material(color: number, options: Partial<THREE.MeshStandardMaterialParameters> = {}) {
   return new THREE.MeshStandardMaterial({
     color,
@@ -1921,7 +1953,7 @@ function addMesh(
   return mesh;
 }
 
-function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
+function createProceduralMachine(kind: ComponentKind, translucent = false): THREE.Group {
   const group = new THREE.Group();
   group.userData.kind = kind;
   const dark = material(0x9aadb2, {
@@ -2192,6 +2224,74 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   return group;
 }
 
+function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
+  if (new URLSearchParams(window.location.search).get("machine-renderer") === "procedural") {
+    return createProceduralMachine(kind, translucent);
+  }
+  const group = new THREE.Group();
+  group.userData.kind = kind;
+
+  const contactShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.65, 12),
+    new THREE.MeshBasicMaterial({
+      color: 0x03121d,
+      transparent: true,
+      opacity: translucent ? 0.08 : 0.18,
+      depthWrite: false,
+    }),
+  );
+  contactShadow.rotation.x = -Math.PI / 2;
+  contactShadow.position.set(0.08, 0.032, 0.1);
+  contactShadow.scale.set(1, 0.64, 1);
+  contactShadow.userData.motion = "contactShadow";
+  group.add(contactShadow);
+
+  const dockMaterial = material(0x29475b, {
+    emissive: 0x102d3e,
+    emissiveIntensity: translucent ? 0.2 : 0.48,
+    roughness: 0.6,
+    metalness: 0.34,
+    transparent: translucent,
+    opacity: translucent ? 0.42 : 1,
+  });
+  const dock = addMesh(
+    group,
+    new THREE.CylinderGeometry(0.56, 0.64, 0.08, 8),
+    dockMaterial,
+    [0, 0.09, 0],
+  );
+  dock.userData.motion = "machineDock";
+
+  const hitVolume = new THREE.Mesh(
+    new THREE.BoxGeometry(1.45, 1.6, 0.72),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      colorWrite: false,
+    }),
+  );
+  hitVolume.position.y = 0.76;
+  group.add(hitVolume);
+
+  const selectionRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.58, 0.69, 12),
+    new THREE.MeshBasicMaterial({
+      color: componentDefinitions[kind].color,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  selectionRing.rotation.x = -Math.PI / 2;
+  selectionRing.position.y = 0.035;
+  selectionRing.userData.motion = "selectionRing";
+  group.add(selectionRing);
+
+  return group;
+}
+
 function renderPartPreviews() {
   for (const kind of componentOrder) {
     const previewData = componentPreviewSources[kind];
@@ -2270,8 +2370,7 @@ function addBoardDetails() {
   const exchange = new THREE.Group();
   exchange.position.set(0, 0.155, 0);
   exchange.rotation.y = -0.055;
-  exchange.userData.baseRotation = exchange.rotation.y;
-  workshopRotors.push(exchange);
+  exchange.visible = false;
   boardGroup.add(exchange);
 
   const warmMetal = casingMaterial(0x84999b, 0.88, 0.1, 0.012);
@@ -2372,6 +2471,8 @@ function addBoardDetails() {
 function addEnvironment() {
   const dark = material(0x263f50, { roughness: 0.7, metalness: 0.42 });
   const screen = material(0x64d9d8, { emissive: 0x176d78, emissiveIntensity: 1.2, roughness: 0.25 });
+  screen.userData.baseEmissiveIntensity = screen.emissiveIntensity;
+  workshopPulseMaterials.push(screen);
   const propDark = casingMaterial(0x82969f, 0.82, 0.24, 0.014);
   const propBlue = casingMaterial(0x9aadb3, 0.74, 0.18, 0.014);
   const propSage = casingMaterial(0x91aaa5, 0.8, 0.12, 0.012);
@@ -2491,6 +2592,75 @@ function addEnvironment() {
 
   addCrateStack(-5.7, 3.55, 0.1, 3, propCream, propAccent, propDark);
   addCrateStack(5.55, -3.35, -0.08, 3, propSage, propAccent, propDark);
+  addReferenceWorkshopProps(dark, propDark, propBlue, propCream, screen, propAccent);
+}
+
+function addReferenceWorkshopProps(
+  dark: THREE.Material,
+  body: THREE.Material,
+  secondary: THREE.Material,
+  cream: THREE.Material,
+  screen: THREE.Material,
+  accent: THREE.Material,
+) {
+  const addBench = (x: number, z: number, width: number, mirrored = false) => {
+    const bench = new THREE.Group();
+    bench.position.set(x, 0, z);
+    environmentGroup.add(bench);
+    addMesh(bench, new THREE.BoxGeometry(width, 0.15, 0.72), cream, [0, 0.72, 0]);
+    addMesh(bench, new THREE.BoxGeometry(width + 0.1, 0.13, 0.82), dark, [0, 0.61, 0]);
+    for (const legX of [-width * 0.38, width * 0.38]) {
+      addMesh(bench, new THREE.BoxGeometry(0.16, 0.65, 0.16), body, [legX, 0.3, -0.16]);
+    }
+    const monitorX = mirrored ? 0.4 : -0.4;
+    addMesh(bench, new THREE.BoxGeometry(0.86, 0.62, 0.12), dark, [monitorX, 1.12, -0.17]);
+    const monitor = addMesh(bench, new THREE.BoxGeometry(0.7, 0.45, 0.035), screen, [monitorX, 1.12, -0.095]);
+    monitor.userData.motion = "workshopScreen";
+    addMesh(bench, new THREE.BoxGeometry(0.62, 0.055, 0.28), secondary, [-monitorX * 0.35, 0.83, 0.13], [-0.08, 0, 0]);
+    for (let index = 0; index < 4; index += 1) {
+      addMesh(bench, new THREE.BoxGeometry(0.075, 0.035, 0.04), index === 0 ? accent : dark, [0.25 + index * 0.11, 0.82, 0.27]);
+    }
+  };
+
+  addBench(-4.25, -4.05, 2.35);
+  addBench(4.55, -3.95, 1.85, true);
+
+  for (const [rackX, phase] of [[2.55, 0], [3.55, 0.7]] as const) {
+    const rack = new THREE.Group();
+    rack.position.set(rackX, 0, -4.52);
+    environmentGroup.add(rack);
+    addMesh(rack, new THREE.BoxGeometry(0.82, 1.86, 0.62), dark, [0, 0.93, 0]);
+    addMesh(rack, new THREE.BoxGeometry(0.68, 1.68, 0.1), body, [0, 0.93, 0.36]);
+    for (let row = 0; row < 7; row += 1) {
+      addMesh(rack, new THREE.BoxGeometry(0.56, 0.12, 0.055), row % 3 === 0 ? secondary : dark, [0, 0.32 + row * 0.2, 0.43]);
+      const rackLight = addMesh(rack, new THREE.BoxGeometry(0.055, 0.035, 0.025), screen, [0.21, 0.32 + row * 0.2, 0.47]);
+      rackLight.userData.motion = "workshopScreen";
+      rackLight.userData.phase = phase + row * 0.23;
+    }
+  }
+
+  const railDark = material(0x183445, { roughness: 0.62, metalness: 0.5 });
+  const railAccent = material(0xd09a45, { emissive: 0x4f3211, emissiveIntensity: 0.36, roughness: 0.58, metalness: 0.3 });
+  for (const x of [-5.6, -3.7, -1.8, 1.8, 3.7, 5.6]) {
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.065, 0.82, 8), railDark, [x, 0.32, 4.63]);
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), railAccent, [x, 0.76, 4.63]);
+  }
+  for (const [x, width] of [[-4.65, 1.82], [-2.75, 1.82], [2.75, 1.82], [4.65, 1.82]] as const) {
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.055, width, 8), railDark, [x, 0.72, 4.63], [0, 0, Math.PI / 2]);
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.025, 0.025, width, 8), railAccent, [x, 0.65, 4.66], [0, 0, Math.PI / 2]);
+  }
+
+  addCable([
+    new THREE.Vector3(-5.5, 0.2, -3.6),
+    new THREE.Vector3(-3.9, 0.2, -2.6),
+    new THREE.Vector3(-3.9, 0.2, 0.9),
+    new THREE.Vector3(-2.6, 0.2, 1.9),
+  ], 0x256f9a, 0.024);
+  addCable([
+    new THREE.Vector3(4.9, 0.19, -3.3),
+    new THREE.Vector3(3.7, 0.19, -2.4),
+    new THREE.Vector3(3.7, 0.19, 1.8),
+  ], 0xb66c38, 0.022);
 }
 
 function addMaintenanceGantry(
@@ -2522,8 +2692,30 @@ function addMaintenanceGantry(
 
   addMesh(gantry, new THREE.TorusGeometry(0.76, 0.12, 8, 24, Math.PI), cream, [0, 1.54, 0.65]);
   addMesh(gantry, new THREE.BoxGeometry(1.0, 0.42, 0.12), dark, [0, 1.86, 0.69]);
-  addMesh(gantry, new THREE.BoxGeometry(0.8, 0.25, 0.07), screen, [0, 1.86, 0.78]);
+  const standbySign = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.82, 0.34),
+    new THREE.MeshBasicMaterial({ map: createWorkshopLabelTexture(["SYSTEM", "STANDBY"]) }),
+  );
+  standbySign.position.set(0, 1.88, 0.79);
+  standbySign.renderOrder = 4;
+  gantry.add(standbySign);
   addMesh(gantry, new THREE.BoxGeometry(0.38, 0.11, 0.05), screen, [0, 1.48, 0.72]);
+
+  const portalGlowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x53dbd7,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+  });
+  workshopPortalGlows.push(portalGlowMaterial);
+  const portalGlow = new THREE.Mesh(new THREE.PlaneGeometry(1.04, 0.7), portalGlowMaterial);
+  portalGlow.position.set(0, 0.88, 0.665);
+  portalGlow.renderOrder = 3;
+  portalGlow.userData.motion = "portalGlow";
+  gantry.add(portalGlow);
+  for (let line = 0; line < 5; line += 1) {
+    addMesh(gantry, new THREE.BoxGeometry(0.94, 0.025, 0.018), screen, [0, 0.62 + line * 0.14, 0.69]);
+  }
 
   // Alternating safety plates echo the painted maintenance language in the references.
   for (let index = 0; index < 11; index += 1) {
@@ -2792,12 +2984,21 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
   group.userData.dragLift = 0;
   machinesGroup.add(group);
 
+  const visual = document.createElement("img");
+  visual.className = "component-visual";
+  visual.src = componentPreviewSources[kind];
+  visual.alt = "";
+  visual.draggable = false;
+  visual.dataset.kind = kind;
+  visual.dataset.state = "healthy";
+  componentVisualLayer.append(visual);
+
   const label = document.createElement("div");
   label.className = "component-label";
   label.innerHTML = `${contextualComponentLabel(kind)}<small>${contextualComponentRole(kind)}</small>`;
   document.querySelector(".game-shell")!.append(label);
 
-  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, state: "healthy" };
+  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, visual, state: "healthy" };
   nodes.push(node);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -2821,6 +3022,7 @@ function moveNode(node: PlacedComponent, grid: GridPosition) {
 
 function selectNode(node: PlacedComponent | null) {
   selectedNode = node;
+  for (const candidate of nodes) candidate.visual.dataset.selected = String(candidate === node);
   if (!node) {
     selectedCard.dataset.visible = "false";
     chaosButton.hidden = true;
@@ -2884,6 +3086,9 @@ function updateMachineAnimations(delta: number) {
     const degraded = node.state === "degraded";
     const disconnected = disconnectedNodeIds?.has(String(node.id)) ?? false;
     const overloaded = isRunning && metrics.bottleneckKind === node.kind && currentDemand > metrics.capacity;
+    node.visual.dataset.hovered = String(hovered);
+    node.visual.dataset.state = failed ? "failed" : degraded ? "degraded" : disconnected ? "disconnected" : overloaded ? "hot" : "healthy";
+    node.visual.dataset.running = String(isRunning && !failed && !disconnected);
     node.label.dataset.visible = String(selected || hovered);
     const targetScale = (selected ? 1.025 : hovered ? 0.985 : 0.94) * (failed ? 0.9 : degraded ? 0.96 : 1);
     const desiredLift = node === draggedNode ? 0.2 : 0;
@@ -2980,6 +3185,7 @@ function removeNode(node: PlacedComponent) {
     else objectMaterial.dispose();
   });
   node.label.remove();
+  node.visual.remove();
   selectNode(null);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -2994,6 +3200,7 @@ function clearLaboratory() {
   for (const node of nodes) {
     machinesGroup.remove(node.group);
     node.label.remove();
+    node.visual.remove();
     node.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
       object.geometry.dispose();
@@ -3385,9 +3592,16 @@ function updateGhost(kind: ComponentKind, grid: GridPosition | null) {
     ghost.userData.kind = kind;
     ghost.scale.setScalar(0.94);
     scene.add(ghost);
+    ghostVisual = document.createElement("img");
+    ghostVisual.className = "component-visual component-visual-ghost";
+    ghostVisual.src = componentPreviewSources[kind];
+    ghostVisual.alt = "";
+    ghostVisual.draggable = false;
+    componentVisualLayer.append(ghostVisual);
   }
   ghost.position.copy(gridToWorld(grid));
   const valid = !isOccupied(grid) && componentDefinitions[kind].cost <= remainingBudget();
+  if (ghostVisual) ghostVisual.dataset.valid = String(valid);
   const nextTile = tileMeshes.find((tile) => {
     const tileGrid = tile.userData.grid as GridPosition;
     return tileGrid.col === grid.col && tileGrid.row === grid.row;
@@ -3418,6 +3632,8 @@ function clearPlacementTile() {
 
 function removeGhost() {
   clearPlacementTile();
+  ghostVisual?.remove();
+  ghostVisual = null;
   if (!ghost) return;
   scene.remove(ghost);
   ghost.traverse((object) => {
@@ -5428,23 +5644,23 @@ function spawnPacketOnRoute(route: Connection[]) {
   const asyncTraffic = route.some((connection) => connection.mode === "enqueue"
     || connection.mode === "consume"
     || connection.mode === "commit");
-  const packetColor = asyncTraffic ? 0x718dcb : 0x55b3c5;
-  const packetMaterial = material(asyncTraffic ? 0x465b8d : 0x286c82, {
-    emissive: asyncTraffic ? 0x2d3c6f : 0x12465a,
-    emissiveIntensity: 1.45,
+  const packetColor = asyncTraffic ? 0xa9b9ff : 0x9ff4e8;
+  const packetMaterial = material(asyncTraffic ? 0x6578b9 : 0x3b91a0, {
+    emissive: asyncTraffic ? 0x43538f : 0x236d78,
+    emissiveIntensity: 1.8,
     roughness: 0.34,
     metalness: 0.26,
   });
   const mesh = new THREE.Group();
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.06, 0.26), packetMaterial);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.34), packetMaterial);
   frame.castShadow = true;
   mesh.add(frame);
 
   const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.085, 0.15, 4),
+    new THREE.ConeGeometry(0.095, 0.17, 4),
     new THREE.MeshBasicMaterial({ color: packetColor, transparent: true, opacity: 0.86 }),
   );
-  nose.position.z = 0.205;
+  nose.position.z = 0.265;
   nose.rotation.x = Math.PI / 2;
   nose.rotation.y = Math.PI / 4;
   mesh.add(nose);
@@ -5965,6 +6181,19 @@ dismissResultButton.addEventListener("click", () => {
   updateTelemetry();
 });
 
+function positionComponentVisual(visual: HTMLImageElement, worldPosition: THREE.Vector3) {
+  const rect = canvas.getBoundingClientRect();
+  const projected = worldPosition.clone().project(camera);
+  const x = (projected.x * 0.5 + 0.5) * rect.width;
+  const y = (-projected.y * 0.5 + 0.5) * rect.height;
+  const depthScale = THREE.MathUtils.clamp(0.8 + (y / Math.max(1, rect.height)) * 0.28, 0.84, 1.08);
+  visual.style.left = `${x}px`;
+  visual.style.top = `${y}px`;
+  visual.style.zIndex = String(Math.round(y));
+  visual.style.setProperty("--component-depth", depthScale.toFixed(3));
+  visual.style.opacity = projected.z < 1 ? "1" : "0";
+}
+
 function updateLabels() {
   const rect = canvas.getBoundingClientRect();
   const occupiedLabels: Array<{ left: number; right: number; top: number; bottom: number }> = [];
@@ -5975,6 +6204,7 @@ function updateLabels() {
       && candidate.bottom > occupied.top,
   );
   for (const node of nodes) {
+    positionComponentVisual(node.visual, node.group.position);
     const projected = node.group.position.clone();
     projected.y += 1.95;
     projected.project(camera);
@@ -5991,6 +6221,7 @@ function updateLabels() {
       occupiedLabels.push({ left: x - width / 2 - 4, right: x + width / 2 + 4, top: y - 34, bottom: y + 4 });
     }
   }
+  if (ghost && ghostVisual) positionComponentVisual(ghostVisual, ghost.position);
   for (const connection of connections) {
     if (!connection.annotation) continue;
     const projected = connection.curve.getPointAt(0.52);
@@ -6064,10 +6295,6 @@ function updateBoardActivity() {
 
 function updateWorkshopAnimations() {
   const motionTime = prefersReducedMotion ? 0 : elapsed;
-  for (const [index, rotor] of workshopRotors.entries()) {
-    const baseRotation = rotor.userData.baseRotation as number ?? 0;
-    rotor.rotation.y = baseRotation + motionTime * (0.025 + index * 0.005);
-  }
   for (const [index, light] of workshopPulseLights.entries()) {
     const baseIntensity = light.userData.baseIntensity as number ?? light.intensity;
     const phase = light.userData.phase as number ?? index * 1.7;
@@ -6078,6 +6305,9 @@ function updateWorkshopAnimations() {
     const baseIntensity = pulseMaterial.userData.baseEmissiveIntensity as number ?? pulseMaterial.emissiveIntensity;
     const pulse = prefersReducedMotion ? 1 : 0.92 + Math.sin(motionTime * 2.1 + index * 2.4) * 0.08;
     pulseMaterial.emissiveIntensity = baseIntensity * pulse;
+  }
+  for (const [index, portalGlow] of workshopPortalGlows.entries()) {
+    portalGlow.opacity = prefersReducedMotion ? 0.34 : 0.28 + (0.5 + 0.5 * Math.sin(motionTime * 2.4 + index)) * 0.14;
   }
 }
 

@@ -5006,12 +5006,77 @@ button:focus-visible {
 /* Reference-derived production art layer. */
 .game-shell::before,
 .game-shell::after {
-  display: none;
+  display: block;
+  z-index: 0;
 }
 
 #game-canvas {
   z-index: 1;
-  filter: none;
+  filter: saturate(1.06) brightness(1.08) contrast(1.03);
+}
+
+.component-visual-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.component-visual {
+  --component-depth: 1;
+  position: absolute;
+  width: clamp(126px, 9vw, 152px);
+  height: auto;
+  scale: 1;
+  transform: translate(-50%, -78%) scale(var(--component-depth));
+  transform-origin: 50% 78%;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
+  pointer-events: none;
+  user-select: none;
+  transition-property: scale, opacity, filter;
+  transition-duration: 120ms;
+  transition-timing-function: steps(2, end);
+}
+
+.component-visual[data-hovered="true"] {
+  scale: 1.035;
+  filter:
+    brightness(1.08)
+    drop-shadow(0 0 5px rgba(91, 226, 224, 0.48))
+    drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
+}
+
+.component-visual[data-selected="true"] {
+  scale: 1.055;
+  filter:
+    brightness(1.08)
+    drop-shadow(0 0 2px #78ede7)
+    drop-shadow(0 0 9px rgba(73, 221, 213, 0.72))
+    drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
+}
+
+.component-visual[data-state="failed"] {
+  filter: grayscale(0.5) sepia(0.36) hue-rotate(300deg) drop-shadow(0 0 8px rgba(224, 67, 89, 0.76));
+}
+
+.component-visual[data-state="degraded"],
+.component-visual[data-state="hot"] {
+  filter: sepia(0.18) brightness(1.05) drop-shadow(0 0 7px rgba(225, 144, 70, 0.68));
+}
+
+.component-visual[data-state="disconnected"] {
+  filter: grayscale(0.68) brightness(0.72) drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
+}
+
+.component-visual-ghost {
+  opacity: 0.5 !important;
+  filter: saturate(1.35) drop-shadow(0 0 9px rgba(70, 218, 211, 0.78));
+}
+
+.component-visual-ghost[data-valid="false"] {
+  filter: grayscale(0.3) sepia(0.7) hue-rotate(300deg) drop-shadow(0 0 9px rgba(225, 63, 86, 0.86));
 }
 
 .part-preview img {
