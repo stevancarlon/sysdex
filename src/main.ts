@@ -80,6 +80,13 @@ type Packet = {
   phase: number;
 };
 
+type InspectionRoute = {
+  id: string;
+  label: string;
+  kind: "blocking" | "async" | "delivery";
+  connections: Connection[];
+};
+
 const componentDefinitions: Record<ComponentKind, ComponentDefinition> = {
   loadBalancer: {
     label: "Load Balancer",
@@ -429,6 +436,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         </div>
         <div class="test-progress" aria-hidden="true"><span id="test-progress-fill"></span></div>
         <p class="bottleneck" id="bottleneck">Install the core request path.</p>
+        <button class="trace-button" id="trace-button" type="button" aria-expanded="false">Trace a path <kbd>R</kbd></button>
       </div>
       <button class="run-button" id="run-button" type="button" data-running="false">Start traffic test</button>
     </section>
@@ -467,6 +475,16 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <strong id="wiring-guide-detail">Then select its destination · click a cable to remove</strong>
       <button id="restore-auto-button" type="button">Restore auto-route</button>
     </div>
+
+    <section class="trace-readout" id="trace-readout" data-visible="false" aria-hidden="true" aria-labelledby="trace-title">
+      <div class="trace-heading">
+        <div><span>Live graph inspector</span><strong id="trace-title">Request path</strong></div>
+        <button id="trace-close-button" type="button" aria-label="Close path inspector">×</button>
+      </div>
+      <div class="trace-tabs" id="trace-tabs" role="tablist" aria-label="Available topology paths"></div>
+      <div class="trace-route" id="trace-route" aria-live="polite"></div>
+      <p id="trace-explanation"></p>
+    </section>
 
     <div class="toast" id="toast" data-visible="false" role="status"></div>
 
@@ -577,6 +595,13 @@ const testPhaseElement = document.querySelector<HTMLElement>("#test-phase")!;
 const testTimeElement = document.querySelector<HTMLElement>("#test-time")!;
 const testProgressFill = document.querySelector<HTMLElement>("#test-progress-fill")!;
 const bottleneckElement = document.querySelector<HTMLElement>("#bottleneck")!;
+const traceButton = document.querySelector<HTMLButtonElement>("#trace-button")!;
+const traceReadout = document.querySelector<HTMLElement>("#trace-readout")!;
+const traceTitle = document.querySelector<HTMLElement>("#trace-title")!;
+const traceTabs = document.querySelector<HTMLElement>("#trace-tabs")!;
+const traceRouteElement = document.querySelector<HTMLElement>("#trace-route")!;
+const traceExplanation = document.querySelector<HTMLElement>("#trace-explanation")!;
+const traceCloseButton = document.querySelector<HTMLButtonElement>("#trace-close-button")!;
 const resultOverlay = document.querySelector<HTMLElement>("#result-overlay")!;
 const resultCard = document.querySelector<HTMLElement>("#result-card")!;
 const resultKicker = document.querySelector<HTMLElement>("#result-kicker")!;
@@ -918,6 +943,9 @@ const connections: Connection[] = [];
 const authoredConnections: AuthoredConnection[] = [];
 const packets: Packet[] = [];
 const trafficRoutes: Connection[][] = [];
+let inspectionRoutes: InspectionRoute[] = [];
+let activeInspectionRouteIndex = 0;
+let activeInspectionConnections = new Set<Connection>();
 let nextNodeId = 1;
 let nextConnectionId = 1;
 let topologyMode: "automatic" | "manual" = "automatic";
@@ -1091,6 +1119,7 @@ function setPhaseParameters(index: number) {
 
 function openCampaignScreen() {
   if (isRunning) stopTest();
+  closeRequestTrace(true);
   phaseBriefingOverlay.dataset.visible = "false";
   phaseBriefingOverlay.setAttribute("aria-hidden", "true");
   missionCard.dataset.briefing = "false";
@@ -1168,6 +1197,7 @@ function openConfigScreen() {
     showToast("Configuration is frozen during a live traffic drill.");
     return;
   }
+  closeRequestTrace(true);
   pendingConfigs = new Set(activeConfigs);
   renderConfigPanel();
   configOverlay.dataset.visible = "true";
@@ -2569,6 +2599,7 @@ function connect(
 }
 
 function rebuildConnections() {
+  closeRequestTrace(true);
   for (const connection of connections) connection.annotation?.remove();
   clearGroup(connectionsGroup);
   clearGroup(packetsGroup);
@@ -2720,6 +2751,174 @@ function rebuildConnections() {
   for (const route of edgeMediaRoutes) if (route.length > 0) trafficRoutes.push(route);
   for (const route of archiveReplicationRoutes) if (route.length > 0) trafficRoutes.push(route);
   for (const route of geoArchiveRoutes) if (route.length > 0) trafficRoutes.push(route);
+}
+
+function findPathFromNode(
+  from: PlacedComponent,
+  sinkKinds: Set<ComponentKind>,
+  allowedModes: Set<SimulationEdgeMode>,
+  visitedNodeIds: Set<number>,
+): Connection[] | null {
+  if (sinkKinds.has(from.kind)) return [];
+  for (const connection of connections) {
+    if (connection.from !== from || !allowedModes.has(connection.mode) || connection.to.state === "failed") continue;
+    if (visitedNodeIds.has(connection.to.id)) continue;
+    const nextVisited = new Set(visitedNodeIds);
+    nextVisited.add(connection.to.id);
+    if (sinkKinds.has(connection.to.kind)) return [connection];
+    const tail = findPathFromNode(connection.to, sinkKinds, allowedModes, nextVisited);
+    if (tail) return [connection, ...tail];
+  }
+  return null;
+}
+
+function findDirectedInspectionPath(
+  entryKinds: ComponentKind[],
+  sinkKinds: ComponentKind[],
+  allowedModes: SimulationEdgeMode[],
+) {
+  const sinks = new Set(sinkKinds);
+  const modes = new Set(allowedModes);
+  for (const entry of nodes.filter((node) => entryKinds.includes(node.kind) && node.state !== "failed")) {
+    const route = findPathFromNode(entry, sinks, modes, new Set([entry.id]));
+    if (route && route.length > 0) return route;
+  }
+  return null;
+}
+
+function findBackgroundInspectionPath() {
+  const sinkKinds = new Set<ComponentKind>(currentPhase.workload === "streaming" ? ["objectStorage"] : ["postgres"]);
+  const firstEdges = connections.filter((connection) => connection.from.kind === "api"
+    && connection.from.state !== "failed"
+    && (connection.mode === "enqueue" || (connection.mode === "request" && connection.to.kind === "worker")));
+  for (const firstEdge of firstEdges) {
+    const tailModes = firstEdge.mode === "enqueue"
+      ? new Set<SimulationEdgeMode>(["consume", "commit"])
+      : new Set<SimulationEdgeMode>(["commit"]);
+    const tail = findPathFromNode(firstEdge.to, sinkKinds, tailModes, new Set([firstEdge.from.id, firstEdge.to.id]));
+    if (tail) return [firstEdge, ...tail];
+  }
+  return null;
+}
+
+function buildInspectionRoutes() {
+  const available: InspectionRoute[] = [];
+  const requestPath = findDirectedInspectionPath(
+    ["loadBalancer"],
+    ["postgres"],
+    ["request", "cache"],
+  );
+  if (requestPath) available.push({
+    id: "request",
+    label: currentPhase.workload === "streaming" ? "Metadata" : "User request",
+    kind: "blocking",
+    connections: requestPath,
+  });
+
+  if (currentPhase.workload === "streaming") {
+    const deliveryPath = findDirectedInspectionPath(["cdn"], ["objectStorage"], ["request", "cache"]);
+    if (deliveryPath) available.push({
+      id: "delivery",
+      label: "Playback",
+      kind: "delivery",
+      connections: deliveryPath,
+    });
+  }
+
+  if (currentPhase.workload === "analytics" || currentPhase.workload === "streaming" || currentPhase.workload === "dispatch") {
+    const backgroundPath = findBackgroundInspectionPath();
+    if (backgroundPath) {
+      const asynchronous = backgroundPath.some((connection) => connection.mode === "enqueue");
+      available.push({
+        id: "background",
+        label: currentPhase.workload === "analytics"
+          ? `Analytics${asynchronous ? "" : " · blocking"}`
+          : currentPhase.workload === "streaming"
+            ? "Transcode"
+            : "Location event",
+        kind: asynchronous ? "async" : "blocking",
+        connections: backgroundPath,
+      });
+    }
+  }
+  return available;
+}
+
+function traceComponentPreview(kind: ComponentKind) {
+  return brandPreviewData.get(kind)
+    ?? document.querySelector<HTMLImageElement>(`#part-preview-${kind}`)?.src
+    ?? "";
+}
+
+function traceModeLabel(mode: SimulationEdgeMode) {
+  if (mode === "enqueue") return "enqueue";
+  if (mode === "consume") return "consume";
+  if (mode === "commit") return "commit";
+  if (mode === "cache") return "lookup";
+  if (mode === "replicate") return "replicate";
+  return "call";
+}
+
+function renderInspectionRoute(index: number) {
+  if (inspectionRoutes.length === 0) {
+    activeInspectionConnections.clear();
+    traceTitle.textContent = "No complete path";
+    traceTabs.innerHTML = "";
+    traceRouteElement.innerHTML = "<span class=\"trace-empty\">The graph has no end-to-end route to inspect.</span>";
+    traceExplanation.textContent = "Connect an entry, processing tier, and required sink. The inspector follows the same directed edges used by the simulator.";
+    return;
+  }
+  activeInspectionRouteIndex = ((index % inspectionRoutes.length) + inspectionRoutes.length) % inspectionRoutes.length;
+  const route = inspectionRoutes[activeInspectionRouteIndex];
+  activeInspectionConnections = new Set(route.connections);
+  traceTitle.textContent = route.label;
+  traceTabs.innerHTML = inspectionRoutes.map((candidate, routeIndex) => `
+    <button type="button" role="tab" data-route-index="${routeIndex}" aria-selected="${routeIndex === activeInspectionRouteIndex}" tabindex="${routeIndex === activeInspectionRouteIndex ? 0 : -1}">${candidate.label}</button>
+  `).join("");
+  traceTabs.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+    button.addEventListener("click", () => renderInspectionRoute(Number(button.dataset.routeIndex)));
+  });
+
+  const routeNodes = [route.connections[0].from, ...route.connections.map((connection) => connection.to)];
+  traceRouteElement.innerHTML = routeNodes.map((node, nodeIndex) => {
+    const preview = traceComponentPreview(node.kind);
+    const nodeMarkup = `<span class="trace-node"><img src="${preview}" alt="" /><b>${contextualComponentLabel(node.kind)}</b></span>`;
+    if (nodeIndex >= route.connections.length) return nodeMarkup;
+    const connection = route.connections[nodeIndex];
+    return `${nodeMarkup}<i data-mode="${connection.mode}"><small>${traceModeLabel(connection.mode)}</small>→</i>`;
+  }).join("");
+
+  const hasQueueBoundary = route.connections.some((connection) => connection.mode === "enqueue");
+  traceExplanation.textContent = route.kind === "delivery"
+    ? "Playback follows this edge route without entering the metadata API path."
+    : hasQueueBoundary
+      ? "The API completes after enqueue; consume and commit continue without blocking the user response."
+      : route.id === "background"
+        ? "There is no queue boundary, so this dependency remains inside the user response deadline."
+        : "Every step on this path must finish before the user receives a response.";
+  for (const connection of route.connections) connection.activity = 1;
+  spawnPacketOnRoute(route.connections);
+}
+
+function openOrCycleRequestTrace() {
+  const alreadyVisible = traceReadout.dataset.visible === "true";
+  inspectionRoutes = buildInspectionRoutes();
+  traceReadout.dataset.visible = "true";
+  traceReadout.setAttribute("aria-hidden", "false");
+  traceButton.setAttribute("aria-expanded", "true");
+  traceButton.innerHTML = "Trace next path <kbd>R</kbd>";
+  renderInspectionRoute(alreadyVisible ? activeInspectionRouteIndex + 1 : 0);
+}
+
+function closeRequestTrace(silent = false) {
+  const wasVisible = traceReadout.dataset.visible === "true";
+  traceReadout.dataset.visible = "false";
+  traceReadout.setAttribute("aria-hidden", "true");
+  traceButton.setAttribute("aria-expanded", "false");
+  traceButton.innerHTML = "Trace a path <kbd>R</kbd>";
+  activeInspectionConnections.clear();
+  inspectionRoutes = [];
+  if (wasVisible && !silent) traceButton.focus({ preventScroll: true });
 }
 
 function captureAutomaticTopology() {
@@ -3815,6 +4014,7 @@ function renderResultHint(level: number) {
 }
 
 function finishTest(passed: boolean) {
+  closeRequestTrace(true);
   isRunning = false;
   testPhase = passed ? "passed" : "failed";
   currentDemand = targetRps;
@@ -3956,7 +4156,14 @@ function spawnPacket() {
   if (trafficRoutes.length === 0 || packets.length >= 30) return;
   const route = trafficRoutes[nextTrafficRoute % trafficRoutes.length];
   nextTrafficRoute += 1;
-  const asyncTraffic = route.some((connection) => connection.label?.includes("ASYNC"));
+  spawnPacketOnRoute(route);
+}
+
+function spawnPacketOnRoute(route: Connection[]) {
+  if (route.length === 0 || packets.length >= 30) return;
+  const asyncTraffic = route.some((connection) => connection.mode === "enqueue"
+    || connection.mode === "consume"
+    || connection.mode === "commit");
   const packetColor = asyncTraffic ? 0x718dcb : 0x55b3c5;
   const packetMaterial = material(asyncTraffic ? 0x465b8d : 0x286c82, {
     emissive: asyncTraffic ? 0x2d3c6f : 0x12465a,
@@ -4024,8 +4231,9 @@ function updatePackets(delta: number) {
 
   for (const connection of connections) {
     connection.activity = Math.max(0, connection.activity - delta * 2.8);
-    connection.material.emissiveIntensity = 0.34 + connection.activity * 1.75 + (connection === hoveredConnection ? 1.1 : 0);
-    connection.annotation?.setAttribute("data-pulse", String(connection.activity > 0.18));
+    const inspectionHighlight = activeInspectionConnections.has(connection) ? 0.78 : 0;
+    connection.material.emissiveIntensity = 0.34 + connection.activity * 1.75 + inspectionHighlight + (connection === hoveredConnection ? 1.1 : 0);
+    connection.annotation?.setAttribute("data-pulse", String(connection.activity > 0.18 || inspectionHighlight > 0));
   }
 
   for (let index = packets.length - 1; index >= 0; index -= 1) {
@@ -4332,6 +4540,11 @@ window.addEventListener("keydown", (event) => {
       updateTelemetry();
       return;
     }
+    if (traceReadout.dataset.visible === "true") {
+      event.preventDefault();
+      closeRequestTrace();
+      return;
+    }
     if (wiringEditing) {
       event.preventDefault();
       if (wiringSource) {
@@ -4363,6 +4576,10 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     setWiringEditing(topologyMode === "automatic" || !wiringEditing);
   }
+  if (event.key.toLowerCase() === "r" && resultOverlay.dataset.visible !== "true") {
+    event.preventDefault();
+    openOrCycleRequestTrace();
+  }
   if (event.key.toLowerCase() === "t" && resultOverlay.dataset.visible !== "true") {
     event.preventDefault();
     if (isRunning) stopTest();
@@ -4378,6 +4595,8 @@ rotateLeftButton.addEventListener("click", () => rotateView(-1));
 rotateRightButton.addEventListener("click", () => rotateView(1));
 wiringButton.addEventListener("click", () => setWiringEditing(topologyMode === "automatic" || !wiringEditing));
 restoreAutoButton.addEventListener("click", restoreAutomaticTopology);
+traceButton.addEventListener("click", openOrCycleRequestTrace);
+traceCloseButton.addEventListener("click", () => closeRequestTrace());
 
 runButton.addEventListener("click", () => {
   if (isRunning) stopTest();
