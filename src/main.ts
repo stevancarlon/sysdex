@@ -62,7 +62,6 @@ type PlacedComponent = {
   group: THREE.Group;
   grid: GridPosition;
   label: HTMLDivElement;
-  visual: HTMLImageElement;
   state: "healthy" | "degraded" | "failed";
 };
 
@@ -237,17 +236,6 @@ const componentPreviewSources: Record<ComponentKind, string> = {
   geoIndex: "/assets/components-v2/geo-index.png",
   objectStorage: "/assets/components-v2/object-storage.png",
   cdn: "/assets/components-v2/cdn-edge.png",
-};
-const componentWorldSources: Record<ComponentKind, string> = {
-  loadBalancer: "/assets/components-v1/load-balancer.png",
-  api: "/assets/components-v1/api-gateway.png",
-  redis: "/assets/components-v1/cache-node.png",
-  postgres: "/assets/components-v1/database-proxy.png",
-  queue: "/assets/components-v1/message-queue.png",
-  worker: "/assets/components-v1/worker-node.png",
-  geoIndex: "/assets/components-v1/geo-index.png",
-  objectStorage: "/assets/components-v1/object-storage.png",
-  cdn: "/assets/components-v1/cdn-edge.png",
 };
 const blueprintConnectionModes: SimulationEdgeMode[] = ["request", "cache", "enqueue", "consume", "commit", "replicate"];
 const sandboxPresets: Record<WorkloadKind, {
@@ -426,13 +414,6 @@ function formatErrorPercent(value: number, contract = value) {
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="game-shell">
     <canvas id="game-canvas" aria-label="Isometric system design workspace"></canvas>
-    <div class="workshop-art-layer workshop-back-wall" id="workshop-back-wall" aria-hidden="true">
-      <img src="/assets/workshop-v2/back-wall.png" alt="" />
-    </div>
-    <div class="component-visual-layer" id="component-visual-layer" aria-hidden="true"></div>
-    <div class="workshop-art-layer workshop-foreground-deck" id="workshop-foreground-deck" aria-hidden="true">
-      <img src="/assets/workshop-v2/foreground-deck.png" alt="" />
-    </div>
 
     <div class="start-overlay" id="start-overlay" data-visible="true" aria-hidden="false">
       <section class="start-card" role="dialog" aria-modal="true" aria-labelledby="start-title">
@@ -841,9 +822,6 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas")!;
-const componentVisualLayer = document.querySelector<HTMLDivElement>("#component-visual-layer")!;
-const workshopBackWallLayer = document.querySelector<HTMLDivElement>("#workshop-back-wall")!;
-const workshopForegroundLayer = document.querySelector<HTMLDivElement>("#workshop-foreground-deck")!;
 canvas.dataset.reducedMotion = String(prefersReducedMotion);
 reducedMotionQuery.addEventListener("change", (event) => {
   prefersReducedMotion = event.matches;
@@ -1065,10 +1043,10 @@ renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 3.15;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
-camera.position.set(-7.2, 21.5, 16.15);
-const cameraTargetHeight = 0.45;
+camera.position.set(-8.6, 16.8, 18.4);
+const cameraTargetHeight = 0.18;
 camera.lookAt(0, cameraTargetHeight, 0);
-camera.zoom = 1.43;
+camera.zoom = 1.16;
 camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1121,7 +1099,6 @@ const cameraOrbitRadius = Math.hypot(camera.position.x, camera.position.z);
 const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
-const referenceCameraAzimuth = cameraAzimuth;
 
 const ambientLight = new THREE.HemisphereLight(0xdde8ef, 0x263c54, 5.55);
 scene.add(ambientLight);
@@ -1162,6 +1139,32 @@ const workshopPulseMaterials: THREE.MeshStandardMaterial[] = [];
 const workshopPulseLights: THREE.PointLight[] = [];
 const workshopPortalGlows: THREE.MeshBasicMaterial[] = [];
 const workshopAnimatedProps: THREE.Object3D[] = [];
+const workshopSignalMaterials: THREE.MeshStandardMaterial[] = [];
+const workshopPropManifest: string[] = [];
+
+function installWorkshopProp(
+  name: string,
+  prop: THREE.Object3D,
+  position?: readonly [number, number, number],
+  rotationY = 0,
+) {
+  prop.name = `workshop:${name}`;
+  prop.userData.workshopProp = name;
+  if (position) prop.position.set(...position);
+  prop.rotation.y = rotationY;
+  environmentGroup.add(prop);
+  workshopPropManifest.push(name);
+  canvas.dataset.workshopProps = String(workshopPropManifest.length);
+  return prop;
+}
+
+function createWorkshopSignal(source: THREE.Material, phase: number) {
+  const signal = (source as THREE.MeshStandardMaterial).clone();
+  signal.userData.baseEmissiveIntensity = signal.emissiveIntensity;
+  signal.userData.phase = phase;
+  workshopSignalMaterials.push(signal);
+  return signal;
+}
 const paintedFloorTexture = createPixelWorkshopTexture("floor");
 const paintedWallTexture = createPixelWorkshopTexture("wall");
 const paintedMachineDarkTexture = createPixelWorkshopTexture("machine-dark");
@@ -1318,7 +1321,6 @@ let draggedNode: PlacedComponent | null = null;
 let pointerDownPosition = { x: 0, y: 0 };
 let nodeHasMoved = false;
 let ghost: THREE.Group | null = null;
-let ghostVisual: HTMLImageElement | null = null;
 let placementTile: THREE.Mesh | null = null;
 let isRunning = false;
 let testPhase: TestPhase = "idle";
@@ -1769,17 +1771,17 @@ function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
   const dot = (color: string, x: number, y: number, size = 2) => fill(color, x, y, size, size);
 
   if (kind === "floor") {
-    fill("#566f7e", 0, 0, 256, 256);
+    fill("#647d8b", 0, 0, 256, 256);
     for (let row = 0; row < 8; row += 1) {
       for (let col = 0; col < 8; col += 1) {
         const x = col * 32;
         const y = row * 32;
-        fill("#213b4d", x, y, 32, 1);
-        fill("#274050", x, y, 1, 32);
-        fill("#758c96", x + 2, y + 2, 28, 1);
-        fill((row + col) % 2 ? "#506b79" : "#5b7381", x + 3, y + 4, 27, 26);
+        fill("#29485c", x, y, 32, 1);
+        fill("#304e60", x, y, 1, 32);
+        fill("#8299a3", x + 2, y + 2, 28, 1);
+        fill((row + col) % 2 ? "#5f7886" : "#69818e", x + 3, y + 4, 27, 26);
         dot("#193448", x + 5, y + 7, 1);
-        dot("#7e95a0", x + 25, y + 25, 1);
+        dot("#8ca2ab", x + 25, y + 25, 1);
         if ((row * 8 + col) % 5 === 0) {
           fill("#365364", x + 8, y + 14, 11, 1);
           fill("#2c4658", x + 18, y + 15, 6, 1);
@@ -1790,7 +1792,7 @@ function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
       const x = Math.floor(pseudoRandom(index * 3 + 91) * 252) + 2;
       const y = Math.floor(pseudoRandom(index * 3 + 92) * 252) + 2;
       const width = index % 7 === 0 ? 3 : index % 3 === 0 ? 2 : 1;
-      fill(index % 11 === 0 ? "#765540" : index % 2 ? "#314d5e" : "#6a8290", x, y, width, 1);
+      fill(index % 11 === 0 ? "#765540" : index % 2 ? "#3a5869" : "#78909b", x, y, width, 1);
     }
   } else if (kind === "wall") {
     fill("#2d465b", 0, 0, 128, 64);
@@ -2002,6 +2004,7 @@ function addMesh(
 
 function createProceduralMachine(kind: ComponentKind, translucent = false): THREE.Group {
   const group = new THREE.Group();
+  group.name = `machine:${kind}`;
   group.userData.kind = kind;
   const dark = material(0x9aadb2, {
     map: paintedMachineDarkTexture,
@@ -2272,71 +2275,7 @@ function createProceduralMachine(kind: ComponentKind, translucent = false): THRE
 }
 
 function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
-  if (new URLSearchParams(window.location.search).get("machine-renderer") === "procedural") {
-    return createProceduralMachine(kind, translucent);
-  }
-  const group = new THREE.Group();
-  group.userData.kind = kind;
-
-  const contactShadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.65, 12),
-    new THREE.MeshBasicMaterial({
-      color: 0x03121d,
-      transparent: true,
-      opacity: translucent ? 0.08 : 0.18,
-      depthWrite: false,
-    }),
-  );
-  contactShadow.rotation.x = -Math.PI / 2;
-  contactShadow.position.set(0.08, 0.032, 0.1);
-  contactShadow.scale.set(1, 0.64, 1);
-  contactShadow.userData.motion = "contactShadow";
-  group.add(contactShadow);
-
-  const dockMaterial = material(0x29475b, {
-    emissive: 0x102d3e,
-    emissiveIntensity: translucent ? 0.2 : 0.48,
-    roughness: 0.6,
-    metalness: 0.34,
-    transparent: translucent,
-    opacity: translucent ? 0.42 : 1,
-  });
-  const dock = addMesh(
-    group,
-    new THREE.CylinderGeometry(0.56, 0.64, 0.08, 8),
-    dockMaterial,
-    [0, 0.09, 0],
-  );
-  dock.userData.motion = "machineDock";
-
-  const hitVolume = new THREE.Mesh(
-    new THREE.BoxGeometry(1.45, 1.6, 0.72),
-    new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      colorWrite: false,
-    }),
-  );
-  hitVolume.position.y = 0.76;
-  group.add(hitVolume);
-
-  const selectionRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.58, 0.69, 12),
-    new THREE.MeshBasicMaterial({
-      color: componentDefinitions[kind].color,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  selectionRing.rotation.x = -Math.PI / 2;
-  selectionRing.position.y = 0.035;
-  selectionRing.userData.motion = "selectionRing";
-  group.add(selectionRing);
-
-  return group;
+  return createProceduralMachine(kind, translucent);
 }
 
 function renderPartPreviews() {
@@ -2533,20 +2472,21 @@ function addEnvironment() {
     side: THREE.DoubleSide,
   });
 
-  addMesh(environmentGroup, new THREE.BoxGeometry(16.2, 0.42, 12.7), fasciaDark, [0, -0.57, 0]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(15.7, 0.14, 12.2), fasciaBlue, [0, -0.34, 0]);
+  const roomShell = installWorkshopProp("armored-room-shell", new THREE.Group());
+  addMesh(roomShell, new THREE.BoxGeometry(16.2, 0.42, 12.7), fasciaDark, [0, -0.57, 0]);
+  addMesh(roomShell, new THREE.BoxGeometry(15.7, 0.14, 12.2), fasciaBlue, [0, -0.34, 0]);
   addPlatformUndercarriage(fasciaDark, fasciaBlue, screen, propDark, propBlue);
 
   // Dense back and side bulkheads make the room feel enclosed, not like a floating arena.
-  addMesh(environmentGroup, new THREE.BoxGeometry(14.6, 2.25, 0.62), fasciaBlue, [0, 0.55, -5.35]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(0.62, 2.05, 10.4), fasciaDark, [-6.65, 0.45, 0]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(0.62, 2.05, 10.4), fasciaDark, [6.65, 0.45, 0]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(13.7, 1.15, 0.55), fasciaDark, [0, 0.05, 5.2]);
+  addMesh(roomShell, new THREE.BoxGeometry(14.6, 2.25, 0.62), fasciaBlue, [0, 0.55, -5.35]);
+  addMesh(roomShell, new THREE.BoxGeometry(0.62, 2.05, 10.4), fasciaDark, [-6.65, 0.45, 0]);
+  addMesh(roomShell, new THREE.BoxGeometry(0.62, 2.05, 10.4), fasciaDark, [6.65, 0.45, 0]);
+  addMesh(roomShell, new THREE.BoxGeometry(13.7, 1.15, 0.55), fasciaDark, [0, 0.05, 5.2]);
 
-  addMesh(environmentGroup, new THREE.PlaneGeometry(13.95, 2.02), paintedBulkhead, [0, 0.58, -5.025]);
-  addMesh(environmentGroup, new THREE.PlaneGeometry(9.7, 1.95), paintedBulkhead, [-6.325, 0.48, 0], [0, Math.PI / 2, 0]);
-  addMesh(environmentGroup, new THREE.PlaneGeometry(9.7, 1.95), paintedBulkhead, [6.325, 0.48, 0], [0, -Math.PI / 2, 0]);
-  addMesh(environmentGroup, new THREE.PlaneGeometry(12.8, 1.0), paintedBulkhead, [0, 0.1, 4.915], [0, Math.PI, 0]);
+  addMesh(roomShell, new THREE.PlaneGeometry(13.95, 2.02), paintedBulkhead, [0, 0.58, -5.025]);
+  addMesh(roomShell, new THREE.PlaneGeometry(9.7, 1.95), paintedBulkhead, [-6.325, 0.48, 0], [0, Math.PI / 2, 0]);
+  addMesh(roomShell, new THREE.PlaneGeometry(9.7, 1.95), paintedBulkhead, [6.325, 0.48, 0], [0, -Math.PI / 2, 0]);
+  addMesh(roomShell, new THREE.PlaneGeometry(12.8, 1.0), paintedBulkhead, [0, 0.1, 4.915], [0, Math.PI, 0]);
 
   const bayStencil = new THREE.Mesh(
     new THREE.PlaneGeometry(1.9, 0.58),
@@ -2559,7 +2499,7 @@ function addEnvironment() {
   );
   bayStencil.position.set(-3.6, 0.68, 5.52);
   bayStencil.renderOrder = 5;
-  environmentGroup.add(bayStencil);
+  roomShell.add(bayStencil);
 
   for (let index = 0; index < 7; index += 1) {
     addEquipmentModule(-4.9 + index * 1.62, -4.88, 0, index, propSage, propCream, propDark, screen, propAccent);
@@ -2614,9 +2554,7 @@ function addEnvironment() {
   // A legible fiber patch station replaces the old black service tunnel. It
   // explains the room as a network workshop and keeps this edge useful and bright.
   const uplink = new THREE.Group();
-  uplink.position.set(-6.08, 0.86, -1.35);
-  uplink.rotation.y = Math.PI / 2;
-  environmentGroup.add(uplink);
+  installWorkshopProp("fiber-patch-station", uplink, [-6.08, 0.86, -1.35], Math.PI / 2);
   addMesh(uplink, new THREE.BoxGeometry(2.7, 1.9, 0.52), propDark, [0, 0, 0]);
   addMesh(uplink, new THREE.BoxGeometry(2.36, 1.55, 0.12), propCream, [0, 0, 0.32]);
   addMesh(uplink, new THREE.BoxGeometry(1.8, 0.42, 0.08), dark, [0, 0.42, 0.41]);
@@ -2638,7 +2576,7 @@ function addEnvironment() {
   addCrateStack(-3.1, 5.05, 0.05, 3, propCream, propAccent, propDark, 0.92);
   addCrateStack(2.55, 5.0, -0.08, 4, propSage, propAccent, propDark, 0.92);
   addWorkshopOperator(1.8, 2.25, propDark, propBlue, screen, propAccent);
-  addReferenceWorkshopProps(dark, propDark, propBlue, propCream, screen, propAccent);
+  addModularWorkshopProps(dark, propDark, propBlue, propCream, screen, propAccent);
 }
 
 function addWorkshopOperator(
@@ -2650,9 +2588,7 @@ function addWorkshopOperator(
   accent: THREE.Material,
 ) {
   const operator = new THREE.Group();
-  operator.position.set(x, 0.2, z);
-  operator.rotation.y = -0.42;
-  environmentGroup.add(operator);
+  installWorkshopProp("systems-operator", operator, [x, 0.2, z], -0.42);
 
   addMesh(operator, new THREE.BoxGeometry(0.34, 0.62, 0.28), body, [0, 0.5, 0]);
   addMesh(operator, new THREE.BoxGeometry(0.38, 0.15, 0.3), accent, [0, 0.66, 0]);
@@ -2669,7 +2605,7 @@ function addWorkshopOperator(
   workshopAnimatedProps.push(operator);
 }
 
-function addReferenceWorkshopProps(
+function addModularWorkshopProps(
   dark: THREE.Material,
   body: THREE.Material,
   secondary: THREE.Material,
@@ -2679,8 +2615,7 @@ function addReferenceWorkshopProps(
 ) {
   const addBench = (x: number, z: number, width: number, mirrored = false) => {
     const bench = new THREE.Group();
-    bench.position.set(x, 0, z);
-    environmentGroup.add(bench);
+    installWorkshopProp(mirrored ? "diagnostics-workbench" : "operator-workbench", bench, [x, 0, z]);
     addMesh(bench, new THREE.BoxGeometry(width, 0.15, 0.72), cream, [0, 0.72, 0]);
     addMesh(bench, new THREE.BoxGeometry(width + 0.1, 0.13, 0.82), dark, [0, 0.61, 0]);
     for (const legX of [-width * 0.38, width * 0.38]) {
@@ -2688,7 +2623,12 @@ function addReferenceWorkshopProps(
     }
     const monitorX = mirrored ? 0.4 : -0.4;
     addMesh(bench, new THREE.BoxGeometry(0.86, 0.62, 0.12), dark, [monitorX, 1.12, -0.17]);
-    const monitor = addMesh(bench, new THREE.BoxGeometry(0.7, 0.45, 0.035), screen, [monitorX, 1.12, -0.095]);
+    const monitor = addMesh(
+      bench,
+      new THREE.BoxGeometry(0.7, 0.45, 0.035),
+      createWorkshopSignal(screen, mirrored ? 1.7 : 0.25),
+      [monitorX, 1.12, -0.095],
+    );
     monitor.userData.motion = "workshopScreen";
     addMesh(bench, new THREE.BoxGeometry(0.62, 0.055, 0.28), secondary, [-monitorX * 0.35, 0.83, 0.13], [-0.08, 0, 0]);
     for (let index = 0; index < 4; index += 1) {
@@ -2701,13 +2641,17 @@ function addReferenceWorkshopProps(
 
   for (const [rackX, phase] of [[0.65, 0], [1.7, 0.7]] as const) {
     const rack = new THREE.Group();
-    rack.position.set(rackX, 0, -4.52);
-    environmentGroup.add(rack);
+    installWorkshopProp(`server-rack-${phase === 0 ? "alpha" : "beta"}`, rack, [rackX, 0, -4.52]);
     addMesh(rack, new THREE.BoxGeometry(0.82, 1.86, 0.62), dark, [0, 0.93, 0]);
     addMesh(rack, new THREE.BoxGeometry(0.68, 1.68, 0.1), body, [0, 0.93, 0.36]);
     for (let row = 0; row < 7; row += 1) {
       addMesh(rack, new THREE.BoxGeometry(0.56, 0.12, 0.055), row % 3 === 0 ? secondary : dark, [0, 0.32 + row * 0.2, 0.43]);
-      const rackLight = addMesh(rack, new THREE.BoxGeometry(0.055, 0.035, 0.025), screen, [0.21, 0.32 + row * 0.2, 0.47]);
+      const rackLight = addMesh(
+        rack,
+        new THREE.BoxGeometry(0.055, 0.035, 0.025),
+        createWorkshopSignal(screen, phase + row * 0.23),
+        [0.21, 0.32 + row * 0.2, 0.47],
+      );
       rackLight.userData.motion = "workshopScreen";
       rackLight.userData.phase = phase + row * 0.23;
     }
@@ -2715,14 +2659,24 @@ function addReferenceWorkshopProps(
 
   const railDark = material(0x183445, { roughness: 0.62, metalness: 0.5 });
   const railAccent = material(0xd09a45, { emissive: 0x4f3211, emissiveIntensity: 0.36, roughness: 0.58, metalness: 0.3 });
+  const safetyRail = installWorkshopProp("foreground-safety-rail", new THREE.Group());
   for (const x of [-5.6, -3.7, -1.8, 1.8, 3.7, 5.6]) {
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.065, 1.08, 8), railDark, [x, 0.72, 5.5]);
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), railAccent, [x, 1.28, 5.5]);
+    addMesh(safetyRail, new THREE.CylinderGeometry(0.055, 0.065, 1.08, 8), railDark, [x, 0.72, 5.5]);
+    addMesh(safetyRail, new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), railAccent, [x, 1.28, 5.5]);
   }
   for (const [x, width] of [[-4.65, 1.82], [-2.75, 1.82], [2.75, 1.82], [4.65, 1.82]] as const) {
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.055, width, 8), railDark, [x, 1.24, 5.5], [0, 0, Math.PI / 2]);
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.025, 0.025, width, 8), railAccent, [x, 1.1, 5.53], [0, 0, Math.PI / 2]);
+    addMesh(safetyRail, new THREE.CylinderGeometry(0.055, 0.055, width, 8), railDark, [x, 1.24, 5.5], [0, 0, Math.PI / 2]);
+    addMesh(safetyRail, new THREE.CylinderGeometry(0.025, 0.025, width, 8), railAccent, [x, 1.1, 5.53], [0, 0, Math.PI / 2]);
   }
+
+  const anchor = installWorkshopProp("bay-anchor-emblem", new THREE.Group(), [0, -0.1, 5.54]);
+  addMesh(anchor, new THREE.TorusGeometry(0.18, 0.055, 8, 18), cream, [0, 0.46, 0]);
+  addMesh(anchor, new THREE.CylinderGeometry(0.055, 0.055, 0.7, 8), cream, [0, 0.05, 0]);
+  addMesh(anchor, new THREE.CylinderGeometry(0.045, 0.045, 0.52, 8), cream, [0, 0.13, 0], [0, 0, Math.PI / 2]);
+  addMesh(anchor, new THREE.CylinderGeometry(0.055, 0.075, 0.5, 8), cream, [-0.17, -0.3, 0], [0, 0, -0.72]);
+  addMesh(anchor, new THREE.CylinderGeometry(0.055, 0.075, 0.5, 8), cream, [0.17, -0.3, 0], [0, 0, 0.72]);
+  addMesh(anchor, new THREE.BoxGeometry(0.17, 0.1, 0.1), cream, [-0.34, -0.46, 0], [0, 0, -0.28]);
+  addMesh(anchor, new THREE.BoxGeometry(0.17, 0.1, 0.1), cream, [0.34, -0.46, 0], [0, 0, 0.28]);
 
   addCable([
     new THREE.Vector3(-5.5, 0.2, -3.6),
@@ -2745,8 +2699,7 @@ function addMaintenanceGantry(
   accent: THREE.Material,
 ) {
   const gantry = new THREE.Group();
-  gantry.position.set(-1.05, 0, -4.66);
-  environmentGroup.add(gantry);
+  installWorkshopProp("standby-service-portal", gantry, [-1.05, 0, -4.66]);
 
   // A deep central service bay gives the room a readable architectural focus.
   addMesh(gantry, new THREE.BoxGeometry(3.25, 2.75, 0.54), dark, [0, 1.18, 0]);
@@ -2821,10 +2774,11 @@ function addPlatformUndercarriage(
   casing: THREE.Material,
   casingCap: THREE.Material,
 ) {
+  const undercarriage = installWorkshopProp("platform-undercarriage", new THREE.Group());
   // A stepped, mechanically supported silhouette keeps the laboratory from
   // reading as one dark extruded box when viewed from an isometric angle.
-  addMesh(environmentGroup, new THREE.BoxGeometry(15.35, 0.25, 11.8), wall, [0, -0.82, 0]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(14.4, 0.22, 10.9), dark, [0, -1.03, 0]);
+  addMesh(undercarriage, new THREE.BoxGeometry(15.35, 0.25, 11.8), wall, [0, -0.82, 0]);
+  addMesh(undercarriage, new THREE.BoxGeometry(14.4, 0.22, 10.9), dark, [0, -1.03, 0]);
 
   const ribMaterial = casing;
   const ribCapMaterial = casingCap;
@@ -2832,29 +2786,29 @@ function addPlatformUndercarriage(
   for (let index = 0; index < 9; index += 1) {
     const x = -6.7 + index * 1.67;
     for (const z of [-6.24, 6.24]) {
-      addMesh(environmentGroup, new THREE.BoxGeometry(1.08, 0.58, 0.24), ribMaterial, [x, -0.58, z]);
-      addMesh(environmentGroup, new THREE.BoxGeometry(1.14, 0.08, 0.29), ribCapMaterial, [x, -0.285, z]);
-      addMesh(environmentGroup, new THREE.BoxGeometry(0.62, 0.2, 0.035), recessMaterial, [x, -0.57, z + Math.sign(z) * 0.125]);
+      addMesh(undercarriage, new THREE.BoxGeometry(1.08, 0.58, 0.24), ribMaterial, [x, -0.58, z]);
+      addMesh(undercarriage, new THREE.BoxGeometry(1.14, 0.08, 0.29), ribCapMaterial, [x, -0.285, z]);
+      addMesh(undercarriage, new THREE.BoxGeometry(0.62, 0.2, 0.035), recessMaterial, [x, -0.57, z + Math.sign(z) * 0.125]);
       if (index % 3 === 1) {
-        addMesh(environmentGroup, new THREE.BoxGeometry(0.36, 0.085, 0.025), screen, [x, -0.57, z + Math.sign(z) * 0.148]);
+        addMesh(undercarriage, new THREE.BoxGeometry(0.36, 0.085, 0.025), screen, [x, -0.57, z + Math.sign(z) * 0.148]);
       }
     }
   }
   for (let index = 0; index < 7; index += 1) {
     const z = -4.75 + index * 1.58;
     for (const x of [-8.02, 8.02]) {
-      addMesh(environmentGroup, new THREE.BoxGeometry(0.24, 0.58, 1.0), ribMaterial, [x, -0.58, z]);
-      addMesh(environmentGroup, new THREE.BoxGeometry(0.29, 0.08, 1.06), ribCapMaterial, [x, -0.285, z]);
-      addMesh(environmentGroup, new THREE.BoxGeometry(0.035, 0.2, 0.55), recessMaterial, [x + Math.sign(x) * 0.125, -0.57, z]);
+      addMesh(undercarriage, new THREE.BoxGeometry(0.24, 0.58, 1.0), ribMaterial, [x, -0.58, z]);
+      addMesh(undercarriage, new THREE.BoxGeometry(0.29, 0.08, 1.06), ribCapMaterial, [x, -0.285, z]);
+      addMesh(undercarriage, new THREE.BoxGeometry(0.035, 0.2, 0.55), recessMaterial, [x + Math.sign(x) * 0.125, -0.57, z]);
       if (index % 3 === 0) {
-        addMesh(environmentGroup, new THREE.BoxGeometry(0.025, 0.085, 0.3), screen, [x + Math.sign(x) * 0.148, -0.57, z]);
+        addMesh(undercarriage, new THREE.BoxGeometry(0.025, 0.085, 0.3), screen, [x + Math.sign(x) * 0.148, -0.57, z]);
       }
     }
   }
 
   for (const [x, z] of [[-6.9, -5.1], [6.9, -5.1], [-6.9, 5.1], [6.9, 5.1]] as const) {
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.34, 0.45, 0.55, 10), casing, [x, -1.2, z]);
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.26, 0.31, 0.12, 10), casingCap, [x, -1.49, z]);
+    addMesh(undercarriage, new THREE.CylinderGeometry(0.34, 0.45, 0.55, 10), casing, [x, -1.2, z]);
+    addMesh(undercarriage, new THREE.CylinderGeometry(0.26, 0.31, 0.12, 10), casingCap, [x, -1.49, z]);
   }
 
   const underglow = material(0x72dfd8, {
@@ -2864,8 +2818,8 @@ function addPlatformUndercarriage(
   });
   underglow.userData.baseEmissiveIntensity = underglow.emissiveIntensity;
   workshopPulseMaterials.push(underglow);
-  addMesh(environmentGroup, new THREE.BoxGeometry(8.2, 0.045, 0.06), underglow, [1.7, -1.13, 5.48]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(0.06, 0.045, 5.5), underglow, [7.25, -1.13, 0.8]);
+  addMesh(undercarriage, new THREE.BoxGeometry(8.2, 0.045, 0.06), underglow, [1.7, -1.13, 5.48]);
+  addMesh(undercarriage, new THREE.BoxGeometry(0.06, 0.045, 5.5), underglow, [7.25, -1.13, 0.8]);
 
   // Low grazing lights reveal the fascia geometry that overhead lighting misses.
   for (const [x, z] of [[0, 5.85], [6.9, 0], [0, -5.85], [-6.9, 0]] as const) {
@@ -2874,7 +2828,7 @@ function addPlatformUndercarriage(
     serviceGlow.userData.baseIntensity = serviceGlow.intensity;
     serviceGlow.userData.phase = workshopPulseLights.length * 1.7;
     workshopPulseLights.push(serviceGlow);
-    environmentGroup.add(serviceGlow);
+    undercarriage.add(serviceGlow);
   }
 }
 
@@ -2890,9 +2844,12 @@ function addCrateStack(
 ) {
   for (let index = 0; index < count; index += 1) {
     const crate = new THREE.Group();
-    crate.position.set(x + (index % 2) * 0.44, baseY + Math.floor(index / 2) * 0.58, z);
-    crate.rotation.y = rotation + (index % 2) * 0.08;
-    environmentGroup.add(crate);
+    installWorkshopProp(
+      `service-crate-${workshopPropManifest.length + 1}`,
+      crate,
+      [x + (index % 2) * 0.44, baseY + Math.floor(index / 2) * 0.58, z],
+      rotation + (index % 2) * 0.08,
+    );
     addMesh(crate, new THREE.BoxGeometry(0.74, 0.52, 0.65), index % 2 ? rust : cream, [0, 0, 0]);
     addMesh(crate, new THREE.BoxGeometry(0.8, 0.06, 0.71), dark, [0, 0.23, 0]);
     addMesh(crate, new THREE.BoxGeometry(0.8, 0.06, 0.71), dark, [0, -0.23, 0]);
@@ -2912,9 +2869,7 @@ function addEquipmentModule(
   accent: THREE.Material,
 ) {
   const module = new THREE.Group();
-  module.position.set(x, 0.73, z);
-  module.rotation.y = rotation;
-  environmentGroup.add(module);
+  installWorkshopProp(`bulkhead-console-${index + 1}`, module, [x, 0.73, z], rotation);
   addMesh(module, new THREE.BoxGeometry(1.5, 1.38, 0.22), dark, [0, 0, -0.12]);
   addMesh(module, new THREE.BoxGeometry(1.34, 1.2, 0.5), body, [0, 0, 0.08]);
   addMesh(module, new THREE.BoxGeometry(1.42, 0.12, 0.62), secondary, [0, 0.63, 0.1]);
@@ -2967,7 +2922,7 @@ function addCable(points: THREE.Vector3[], color: number, radius: number) {
     material(color, { roughness: 0.52, metalness: 0.18 }),
   );
   cable.castShadow = true;
-  environmentGroup.add(cable);
+  installWorkshopProp(`surface-conduit-${workshopPropManifest.length + 1}`, cable);
 }
 
 function shortestAngleDifference(from: number, to: number) {
@@ -2984,16 +2939,6 @@ function updateCameraOrbit(delta: number) {
   );
   camera.lookAt(0, cameraTargetHeight, 0);
   canvas.dataset.cameraAzimuth = cameraAzimuth.toFixed(3);
-  const referenceDelta = shortestAngleDifference(referenceCameraAzimuth, cameraAzimuth);
-  const referenceFade = THREE.MathUtils.clamp(1 - Math.abs(referenceDelta) * 3.2, 0, 1);
-  workshopBackWallLayer.style.setProperty("--workshop-shift-x", `${(-referenceDelta * 105).toFixed(1)}px`);
-  workshopBackWallLayer.style.setProperty("--workshop-shift-y", `${(Math.abs(referenceDelta) * 12).toFixed(1)}px`);
-  workshopBackWallLayer.style.setProperty("--workshop-skew", `${(referenceDelta * -4.5).toFixed(2)}deg`);
-  workshopBackWallLayer.style.opacity = referenceFade.toFixed(3);
-  workshopForegroundLayer.style.setProperty("--workshop-shift-x", `${(referenceDelta * 145).toFixed(1)}px`);
-  workshopForegroundLayer.style.setProperty("--workshop-shift-y", `${(-Math.abs(referenceDelta) * 8).toFixed(1)}px`);
-  workshopForegroundLayer.style.setProperty("--workshop-skew", `${(referenceDelta * 3.2).toFixed(2)}deg`);
-  workshopForegroundLayer.style.opacity = referenceFade.toFixed(3);
 }
 
 function rotateView(direction: -1 | 1) {
@@ -3072,21 +3017,12 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
   group.userData.dragLift = 0;
   machinesGroup.add(group);
 
-  const visual = document.createElement("img");
-  visual.className = "component-visual";
-  visual.src = componentWorldSources[kind];
-  visual.alt = "";
-  visual.draggable = false;
-  visual.dataset.kind = kind;
-  visual.dataset.state = "healthy";
-  componentVisualLayer.append(visual);
-
   const label = document.createElement("div");
   label.className = "component-label";
   label.innerHTML = `${contextualComponentLabel(kind)}<small>${contextualComponentRole(kind)}</small>`;
   document.querySelector(".game-shell")!.append(label);
 
-  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, visual, state: "healthy" };
+  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, state: "healthy" };
   nodes.push(node);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -3110,7 +3046,6 @@ function moveNode(node: PlacedComponent, grid: GridPosition) {
 
 function selectNode(node: PlacedComponent | null) {
   selectedNode = node;
-  for (const candidate of nodes) candidate.visual.dataset.selected = String(candidate === node);
   if (!node) {
     selectedCard.dataset.visible = "false";
     chaosButton.hidden = true;
@@ -3174,11 +3109,8 @@ function updateMachineAnimations(delta: number) {
     const degraded = node.state === "degraded";
     const disconnected = disconnectedNodeIds?.has(String(node.id)) ?? false;
     const overloaded = isRunning && metrics.bottleneckKind === node.kind && currentDemand > metrics.capacity;
-    node.visual.dataset.hovered = String(hovered);
-    node.visual.dataset.state = failed ? "failed" : degraded ? "degraded" : disconnected ? "disconnected" : overloaded ? "hot" : "healthy";
-    node.visual.dataset.running = String(isRunning && !failed && !disconnected);
     node.label.dataset.visible = String(selected || hovered);
-    const targetScale = (selected ? 1.025 : hovered ? 0.985 : 0.94) * (failed ? 0.9 : degraded ? 0.96 : 1);
+    const targetScale = (selected ? 1.12 : hovered ? 1.09 : 1.05) * (failed ? 0.9 : degraded ? 0.96 : 1);
     const desiredLift = node === draggedNode ? 0.2 : 0;
     group.userData.dragLift = THREE.MathUtils.lerp(group.userData.dragLift as number ?? 0, desiredLift, Math.min(1, delta * 15));
     const idleBob = prefersReducedMotion
@@ -3186,7 +3118,7 @@ function updateMachineAnimations(delta: number) {
       : Math.sin(motionElapsed * (1.35 + activity) + node.id * 1.7) * (0.004 + activity * 0.009) + (failed ? Math.sin(motionElapsed * 29) * 0.012 : 0);
     group.position.y = gridToWorld(node.grid).y + (group.userData.dragLift as number) + idleBob;
     const renderedScale = Math.max(0.01, targetScale * spawnEase);
-    group.scale.set(renderedScale, renderedScale * 0.82, renderedScale);
+    group.scale.setScalar(renderedScale);
     group.rotation.y = -0.08 + (!prefersReducedMotion && (overloaded || failed) ? Math.sin(motionElapsed * 34 + node.id) * (failed ? 0.03 : 0.018) : 0);
     group.rotation.z = prefersReducedMotion
       ? failed ? -0.035 : 0
@@ -3273,7 +3205,6 @@ function removeNode(node: PlacedComponent) {
     else objectMaterial.dispose();
   });
   node.label.remove();
-  node.visual.remove();
   selectNode(null);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -3288,7 +3219,6 @@ function clearLaboratory() {
   for (const node of nodes) {
     machinesGroup.remove(node.group);
     node.label.remove();
-    node.visual.remove();
     node.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
       object.geometry.dispose();
@@ -3680,16 +3610,9 @@ function updateGhost(kind: ComponentKind, grid: GridPosition | null) {
     ghost.userData.kind = kind;
     ghost.scale.setScalar(0.94);
     scene.add(ghost);
-    ghostVisual = document.createElement("img");
-    ghostVisual.className = "component-visual component-visual-ghost";
-    ghostVisual.src = componentWorldSources[kind];
-    ghostVisual.alt = "";
-    ghostVisual.draggable = false;
-    componentVisualLayer.append(ghostVisual);
   }
   ghost.position.copy(gridToWorld(grid));
   const valid = !isOccupied(grid) && componentDefinitions[kind].cost <= remainingBudget();
-  if (ghostVisual) ghostVisual.dataset.valid = String(valid);
   const nextTile = tileMeshes.find((tile) => {
     const tileGrid = tile.userData.grid as GridPosition;
     return tileGrid.col === grid.col && tileGrid.row === grid.row;
@@ -3720,8 +3643,6 @@ function clearPlacementTile() {
 
 function removeGhost() {
   clearPlacementTile();
-  ghostVisual?.remove();
-  ghostVisual = null;
   if (!ghost) return;
   scene.remove(ghost);
   ghost.traverse((object) => {
@@ -6269,19 +6190,6 @@ dismissResultButton.addEventListener("click", () => {
   updateTelemetry();
 });
 
-function positionComponentVisual(visual: HTMLImageElement, worldPosition: THREE.Vector3) {
-  const rect = canvas.getBoundingClientRect();
-  const projected = worldPosition.clone().project(camera);
-  const x = (projected.x * 0.5 + 0.5) * rect.width;
-  const y = (-projected.y * 0.5 + 0.5) * rect.height;
-  const depthScale = THREE.MathUtils.clamp(0.8 + (y / Math.max(1, rect.height)) * 0.28, 0.84, 1.08);
-  visual.style.left = `${x}px`;
-  visual.style.top = `${y}px`;
-  visual.style.zIndex = String(Math.round(y));
-  visual.style.setProperty("--component-depth", depthScale.toFixed(3));
-  visual.style.opacity = projected.z < 1 ? "1" : "0";
-}
-
 function updateLabels() {
   const rect = canvas.getBoundingClientRect();
   const occupiedLabels: Array<{ left: number; right: number; top: number; bottom: number }> = [];
@@ -6292,7 +6200,6 @@ function updateLabels() {
       && candidate.bottom > occupied.top,
   );
   for (const node of nodes) {
-    positionComponentVisual(node.visual, node.group.position);
     const projected = node.group.position.clone();
     projected.y += 1.95;
     projected.project(camera);
@@ -6309,7 +6216,6 @@ function updateLabels() {
       occupiedLabels.push({ left: x - width / 2 - 4, right: x + width / 2 + 4, top: y - 34, bottom: y + 4 });
     }
   }
-  if (ghost && ghostVisual) positionComponentVisual(ghostVisual, ghost.position);
   for (const connection of connections) {
     if (!connection.annotation) continue;
     const projected = connection.curve.getPointAt(0.52);
@@ -6396,6 +6302,12 @@ function updateWorkshopAnimations() {
   }
   for (const [index, portalGlow] of workshopPortalGlows.entries()) {
     portalGlow.opacity = prefersReducedMotion ? 0.34 : 0.28 + (0.5 + 0.5 * Math.sin(motionTime * 2.4 + index)) * 0.14;
+  }
+  for (const [index, signal] of workshopSignalMaterials.entries()) {
+    const baseIntensity = signal.userData.baseEmissiveIntensity as number ?? signal.emissiveIntensity;
+    const phase = signal.userData.phase as number ?? index;
+    const pulse = prefersReducedMotion ? 1 : 0.58 + (0.5 + 0.5 * Math.sin(motionTime * 3.2 + phase * 7)) * 0.72;
+    signal.emissiveIntensity = baseIntensity * pulse;
   }
   for (const [index, prop] of workshopAnimatedProps.entries()) {
     const baseY = prop.userData.baseY as number ?? prop.position.y;

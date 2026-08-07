@@ -3277,8 +3277,7 @@ body {
 }
 
 .brand,
-.campaign-dock,
-.view-controls {
+.campaign-dock {
   display: none;
 }
 
@@ -4616,7 +4615,10 @@ button:focus-visible {
 }
 
 .campaign-dock { min-width: 408px; padding: 7px; }
-.view-controls { padding: 7px; }
+.view-controls {
+  display: grid;
+  padding: 7px;
+}
 
 .campaign-dock button,
 .view-controls button {
@@ -5003,11 +5005,6 @@ button:focus-visible {
 }
 }
 
-/* Reference-derived production art layer. */
-.game-shell {
-  --reference-scale: 1;
-}
-
 .game-shell::before,
 .game-shell::after {
   display: block;
@@ -5016,130 +5013,7 @@ button:focus-visible {
 
 #game-canvas {
   z-index: 1;
-  filter: saturate(0.93) brightness(1.16) contrast(1.02);
-}
-
-.workshop-art-layer {
-  position: absolute;
-  pointer-events: none;
-  transform:
-    translate3d(var(--workshop-shift-x, 0), var(--workshop-shift-y, 0), 0)
-    skewY(var(--workshop-skew, 0deg));
-  transform-origin: 50% 50%;
-  image-rendering: pixelated;
-  transition-property: opacity;
-  transition-duration: 140ms;
-  transition-timing-function: ease-out;
-}
-
-.workshop-art-layer img {
-  display: block;
-  width: 100%;
-  height: auto;
-  image-rendering: pixelated;
-}
-
-.workshop-back-wall {
-  top: 0;
-  left: calc(280px * var(--reference-scale));
-  z-index: 2;
-  width: calc(920px * var(--reference-scale));
-}
-
-.workshop-foreground-deck {
-  top: calc(750px * var(--reference-scale));
-  left: calc(270px * var(--reference-scale));
-  z-index: 4;
-  width: calc(850px * var(--reference-scale));
-}
-
-.component-visual-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.component-visual {
-  --component-depth: 1;
-  position: absolute;
-  width: clamp(138px, 9.6vw, 164px);
-  height: auto;
-  scale: 1;
-  transform: translate(-50%, -78%) scale(var(--component-depth));
-  transform-origin: 50% 78%;
-  image-rendering: pixelated;
-  filter: drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
-  pointer-events: none;
-  user-select: none;
-  transition-property: scale, opacity, filter;
-  transition-duration: 120ms;
-  transition-timing-function: steps(2, end);
-  animation: component-deploy 280ms steps(4, end);
-}
-
-@keyframes component-deploy {
-  0% {
-    opacity: 0;
-    scale: 0.25;
-    filter: blur(4px) drop-shadow(0 2px 0 rgba(0, 7, 13, 0.2));
-  }
-  70% {
-    opacity: 1;
-    scale: 1.035;
-    filter: blur(0) brightness(1.08) drop-shadow(0 0 7px rgba(91, 226, 224, 0.42));
-  }
-  100% {
-    opacity: 1;
-    scale: 1;
-    filter: blur(0) drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
-  }
-}
-
-.component-visual[data-hovered="true"] {
-  scale: 1.035;
-  filter:
-    brightness(1.08)
-    drop-shadow(0 0 5px rgba(91, 226, 224, 0.48))
-    drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
-}
-
-.component-visual[data-selected="true"] {
-  scale: 1.055;
-  filter:
-    brightness(1.08)
-    drop-shadow(0 0 2px #78ede7)
-    drop-shadow(0 0 9px rgba(73, 221, 213, 0.72))
-    drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
-}
-
-.component-visual[data-state="failed"] {
-  filter: grayscale(0.5) sepia(0.36) hue-rotate(300deg) drop-shadow(0 0 8px rgba(224, 67, 89, 0.76));
-}
-
-.component-visual[data-state="degraded"],
-.component-visual[data-state="hot"] {
-  filter: sepia(0.18) brightness(1.05) drop-shadow(0 0 7px rgba(225, 144, 70, 0.68));
-}
-
-.component-visual[data-state="disconnected"] {
-  filter: grayscale(0.68) brightness(0.72) drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
-}
-
-.component-visual-ghost {
-  opacity: 0.5 !important;
-  filter: saturate(1.35) drop-shadow(0 0 9px rgba(70, 218, 211, 0.78));
-}
-
-.component-visual-ghost[data-valid="false"] {
-  filter: grayscale(0.3) sepia(0.7) hue-rotate(300deg) drop-shadow(0 0 9px rgba(225, 63, 86, 0.86));
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .component-visual {
-    animation: none;
-  }
+  filter: saturate(0.94) brightness(1.22) contrast(1.02);
 }
 
 .part-preview img {
@@ -5242,7 +5116,7 @@ button:focus-visible {
   color: #71898e;
   background:
     linear-gradient(rgba(4, 16, 24, 0.48), rgba(4, 16, 24, 0.48)),
-    url("/assets/components-v1/cdn-edge.png") center 53% / 78% auto no-repeat,
+    url("/assets/components-v2/cdn-edge.png") center 53% / 78% auto no-repeat,
     #092130;
   box-shadow:
     inset 0 0 0 2px #061722,
