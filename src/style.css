@@ -1620,6 +1620,59 @@ button,
   box-shadow: inset 0 0 0 1px rgba(214, 106, 120, 0.16);
 }
 
+.result-review {
+  margin-top: 10px;
+  padding: 11px;
+  border-radius: 13px;
+  background: rgba(4, 17, 28, 0.66);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.result-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.result-review-heading span,
+.result-review-heading b {
+  font: 900 7px "Courier New", monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.result-review-heading span { color: #7ed9e5; }
+.result-review-heading b { color: #718b95; font-variant-numeric: tabular-nums; }
+
+.result-review-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.result-review article {
+  min-width: 0;
+  padding: 9px;
+  border-radius: 9px;
+  background: rgba(18, 38, 51, .78);
+  box-shadow: inset 0 0 0 1px rgba(139, 217, 226, .1);
+}
+
+.result-review article small,
+.result-review article strong { display: block; }
+.result-review article small { color: #74909a; font: 900 6px "Courier New", monospace; letter-spacing: .09em; text-transform: uppercase; }
+.result-review article strong { margin-top: 4px; color: #dcebed; font: 800 10px/1.25 var(--font-ui); text-wrap: balance; }
+.result-review article p { margin: 5px 0 0; color: #93aab2; font-size: 8px; line-height: 1.4; text-wrap: pretty; }
+.result-review article[data-kind="proof"] { background: rgba(20, 61, 67, .5); }
+.result-review article[data-kind="proof"] small { color: #7ddbdc; }
+.result-review article[data-kind="risk"] { background: rgba(65, 49, 30, .48); }
+.result-review article[data-kind="risk"] small { color: #ddbd7e; }
+.result-review article[data-kind="experiment"] { background: rgba(43, 47, 73, .54); }
+.result-review article[data-kind="experiment"] small { color: #aaa9d3; }
+.result-review[data-outcome="failed"] article[data-kind="proof"] { background: rgba(43, 51, 59, .56); }
+
 .result-analysis {
   margin-top: 9px;
   padding: 12px;

@@ -532,6 +532,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <span><small id="result-stability-label">Stable for</small><strong id="result-stability">0.0s</strong></span>
         </div>
         <p class="result-diagnosis" id="result-diagnosis"></p>
+        <section class="result-review" id="result-review" aria-label="Operational review">
+          <div class="result-review-heading"><span>Operational review</span><b id="result-review-profile">Observed graph</b></div>
+          <div class="result-review-grid">
+            <article data-kind="proof"><small>Proven</small><strong id="result-proof-title"></strong><p id="result-proof-copy"></p></article>
+            <article data-kind="risk"><small>Watch</small><strong id="result-risk-title"></strong><p id="result-risk-copy"></p></article>
+            <article data-kind="experiment"><small>Try next</small><strong id="result-experiment-title"></strong><p id="result-experiment-copy"></p></article>
+          </div>
+        </section>
         <section class="result-analysis" id="result-analysis" hidden aria-label="Slow request trace">
           <div class="result-analysis-heading">
             <span>Slow request trace</span>
@@ -630,6 +638,14 @@ const resultBudget = document.querySelector<HTMLElement>("#result-budget")!;
 const resultStabilityLabel = document.querySelector<HTMLElement>("#result-stability-label")!;
 const resultStability = document.querySelector<HTMLElement>("#result-stability")!;
 const resultDiagnosis = document.querySelector<HTMLElement>("#result-diagnosis")!;
+const resultReview = document.querySelector<HTMLElement>("#result-review")!;
+const resultReviewProfile = document.querySelector<HTMLElement>("#result-review-profile")!;
+const resultProofTitle = document.querySelector<HTMLElement>("#result-proof-title")!;
+const resultProofCopy = document.querySelector<HTMLElement>("#result-proof-copy")!;
+const resultRiskTitle = document.querySelector<HTMLElement>("#result-risk-title")!;
+const resultRiskCopy = document.querySelector<HTMLElement>("#result-risk-copy")!;
+const resultExperimentTitle = document.querySelector<HTMLElement>("#result-experiment-title")!;
+const resultExperimentCopy = document.querySelector<HTMLElement>("#result-experiment-copy")!;
 const resultAnalysis = document.querySelector<HTMLElement>("#result-analysis")!;
 const resultLatencyGap = document.querySelector<HTMLElement>("#result-latency-gap")!;
 const resultLatencySloMarker = document.querySelector<HTMLElement>("#result-latency-slo-marker")!;
@@ -4179,6 +4195,80 @@ function renderResultHint(level: number) {
   resultHintButton.disabled = resultHintLevel >= 2;
 }
 
+function populateOperationalReview(metrics: ReturnType<typeof calculateMetrics>, passed: boolean) {
+  const topology = "topology" in metrics ? metrics.topology : null;
+  const disconnectedIds = new Set(topology?.disconnectedNodeIds ?? []);
+  const connectedNodeCount = nodes.filter((node) => !disconnectedIds.has(String(node.id))).length;
+  const headroom = Math.max(0, metrics.capacity - targetRps);
+  const backgroundMode = topology?.backgroundMode ?? "none";
+  resultReview.dataset.outcome = passed ? "passed" : "failed";
+  resultReviewProfile.textContent = `${topologyMode === "manual" ? "Manual" : "Auto"} graph · ${connectedNodeCount}/${nodes.length} connected`;
+
+  if (passed && currentPhase.workload === "streaming" && topology && "routeCapacities" in topology) {
+    resultProofTitle.textContent = "Three contracts held independently";
+    resultProofCopy.textContent = `Metadata, playback, and transcode paths all cleared ${targetRps.toLocaleString("en-US")} r/s equivalent demand; p95 settled at ${metrics.latency} ms.`;
+  } else if (passed && backgroundMode === "asynchronous") {
+    resultProofTitle.textContent = "User and background work stayed isolated";
+    resultProofCopy.textContent = `The request path met p95 ${metrics.latency} ms while the asynchronous path drained its workload without a growing backlog.`;
+  } else if (passed) {
+    resultProofTitle.textContent = "The connected path survived the drill";
+    resultProofCopy.textContent = `${targetRps.toLocaleString("en-US")} r/s held inside the ${latencySlo} ms SLO${headroom > 0 ? ` with ${Math.round(headroom).toLocaleString("en-US")} r/s spare capacity` : " at the tested capacity"}.`;
+  } else if (metrics.hasCore) {
+    resultProofTitle.textContent = "A usable response route exists";
+    resultProofCopy.textContent = `The strongest connected path carried ${Math.round(metrics.capacity).toLocaleString("en-US")} r/s. That working slice is the baseline for the next experiment.`;
+  } else {
+    resultProofTitle.textContent = "No end-to-end behavior was proven";
+    resultProofCopy.textContent = "Installed machines never formed a complete healthy response route, so capacity and latency could not be certified.";
+  }
+
+  if (disconnectedIds.size > 0) {
+    resultRiskTitle.textContent = `${disconnectedIds.size} machine${disconnectedIds.size === 1 ? " is" : "s are"} operationally idle`;
+    resultRiskCopy.textContent = "They consume budget but sit outside every required request, background, delivery, or replication path.";
+  } else if (backgroundMode === "synchronous") {
+    resultRiskTitle.textContent = "A background dependency still blocks users";
+    resultRiskCopy.textContent = "This graph may pass with enough compute, but dependency latency or failure still enters the user response deadline.";
+  } else {
+    const affectedKind = currentPhase.incident.affectedKind;
+    const connectedAffectedCount = affectedKind
+      ? nodes.filter((node) => node.kind === affectedKind && !disconnectedIds.has(String(node.id))).length
+      : 0;
+    if (affectedKind && connectedAffectedCount <= 1 && !availableIncidentPolicy()) {
+      resultRiskTitle.textContent = `One ${contextualComponentLabel(affectedKind)} remains a failure domain`;
+      resultRiskCopy.textContent = "The exercise recovered it manually; a second connected route or an explicit policy would change that operational tradeoff.";
+    } else if (activeConfigs.size === 0 && currentPhaseIndex > 0) {
+      resultRiskTitle.textContent = "Recovery depends on an operator";
+      resultRiskCopy.textContent = "The topology works, but no runbook policy is configured to detect, isolate, or replace a failed dependency automatically.";
+    } else {
+      resultRiskTitle.textContent = "More machinery means more coordination";
+      resultRiskCopy.textContent = `${nodes.length} machines and ${activeConfigs.size} runbook polic${activeConfigs.size === 1 ? "y" : "ies"} passed; cost and failure surface still matter beyond the SLO.`;
+    }
+  }
+
+  if (!passed) {
+    const bottleneck = metrics.bottleneckKind ? contextualComponentLabel(metrics.bottleneckKind) : "broken boundary";
+    resultExperimentTitle.textContent = `Trace ${bottleneck}`;
+    resultExperimentCopy.textContent = "Change one boundary or capacity tier, trace the affected path, then rerun. The comparison will reveal whether the bottleneck moved.";
+  } else if (backgroundMode === "synchronous") {
+    resultExperimentTitle.textContent = "Compare failure isolation";
+    resultExperimentCopy.textContent = "Save this blueprint, then test a design where non-user work has a different completion deadline. Compare cost, p95, and dependency risk.";
+  } else if (currentPhase.workload === "streaming") {
+    resultExperimentTitle.textContent = "Shift the edge/origin balance";
+    resultExperimentCopy.textContent = "Save this blueprint, vary CDN and Object Storage capacity, and inspect which of the three paths becomes limiting first.";
+  } else if (currentPhase.workload === "matching" || currentPhase.workload === "dispatch") {
+    resultExperimentTitle.textContent = "Change the partition shape";
+    resultExperimentCopy.textContent = "Compare geographic shards against cache and compute headroom. A different balance may pass with a different cost and hotspot risk.";
+  } else if (topology?.cacheOperational) {
+    resultExperimentTitle.textContent = "Trade cache reliance for durable headroom";
+    resultExperimentCopy.textContent = "Save this design, then compare a storage-heavy variant. The goal is not a winner—observe how latency, budget, and failure behavior move.";
+  } else if (currentPhase.unlocks.includes("redis")) {
+    resultExperimentTitle.textContent = "Trade storage scale for fast memory";
+    resultExperimentCopy.textContent = "Compare this durable path with a cache-assisted graph and inspect both the latency gain and the new failure dependency.";
+  } else {
+    resultExperimentTitle.textContent = "Test the minimum safe headroom";
+    resultExperimentCopy.textContent = "Save the blueprint, remove or reroute one spare, and rerun the same drill to find which redundancy is actually carrying risk.";
+  }
+}
+
 function finishTest(passed: boolean) {
   closeRequestTrace(true);
   isRunning = false;
@@ -4219,6 +4309,7 @@ function finishTest(passed: boolean) {
   resultStabilityLabel.textContent = blockingAnalyticsFailure ? "Budget left" : "Stable for";
   resultStability.textContent = blockingAnalyticsFailure ? `$${remainingBudget().toLocaleString("en-US")}` : `${stableElapsed.toFixed(1)}s`;
   resultDiagnosis.textContent = metrics.diagnosis;
+  populateOperationalReview(metrics, passed);
   resultAnalysis.hidden = !blockingAnalyticsFailure;
   resultHint.hidden = !blockingAnalyticsFailure;
   if (blockingAnalyticsFailure) {
