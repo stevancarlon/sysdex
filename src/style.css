@@ -5004,6 +5004,10 @@ button:focus-visible {
 }
 
 /* Reference-derived production art layer. */
+.game-shell {
+  --reference-scale: 1;
+}
+
 .game-shell::before,
 .game-shell::after {
   display: block;
@@ -5012,13 +5016,47 @@ button:focus-visible {
 
 #game-canvas {
   z-index: 1;
-  filter: saturate(1.06) brightness(1.08) contrast(1.03);
+  filter: saturate(0.93) brightness(1.16) contrast(1.02);
+}
+
+.workshop-art-layer {
+  position: absolute;
+  pointer-events: none;
+  transform:
+    translate3d(var(--workshop-shift-x, 0), var(--workshop-shift-y, 0), 0)
+    skewY(var(--workshop-skew, 0deg));
+  transform-origin: 50% 50%;
+  image-rendering: pixelated;
+  transition-property: opacity;
+  transition-duration: 140ms;
+  transition-timing-function: ease-out;
+}
+
+.workshop-art-layer img {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.workshop-back-wall {
+  top: 0;
+  left: calc(280px * var(--reference-scale));
+  z-index: 2;
+  width: calc(920px * var(--reference-scale));
+}
+
+.workshop-foreground-deck {
+  top: calc(750px * var(--reference-scale));
+  left: calc(270px * var(--reference-scale));
+  z-index: 4;
+  width: calc(850px * var(--reference-scale));
 }
 
 .component-visual-layer {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   overflow: hidden;
   pointer-events: none;
 }
@@ -5026,7 +5064,7 @@ button:focus-visible {
 .component-visual {
   --component-depth: 1;
   position: absolute;
-  width: clamp(126px, 9vw, 152px);
+  width: clamp(138px, 9.6vw, 164px);
   height: auto;
   scale: 1;
   transform: translate(-50%, -78%) scale(var(--component-depth));
@@ -5038,6 +5076,25 @@ button:focus-visible {
   transition-property: scale, opacity, filter;
   transition-duration: 120ms;
   transition-timing-function: steps(2, end);
+  animation: component-deploy 280ms steps(4, end);
+}
+
+@keyframes component-deploy {
+  0% {
+    opacity: 0;
+    scale: 0.25;
+    filter: blur(4px) drop-shadow(0 2px 0 rgba(0, 7, 13, 0.2));
+  }
+  70% {
+    opacity: 1;
+    scale: 1.035;
+    filter: blur(0) brightness(1.08) drop-shadow(0 0 7px rgba(91, 226, 224, 0.42));
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    filter: blur(0) drop-shadow(0 9px 2px rgba(0, 7, 13, 0.68));
+  }
 }
 
 .component-visual[data-hovered="true"] {
@@ -5077,6 +5134,12 @@ button:focus-visible {
 
 .component-visual-ghost[data-valid="false"] {
   filter: grayscale(0.3) sepia(0.7) hue-rotate(300deg) drop-shadow(0 0 9px rgba(225, 63, 86, 0.86));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .component-visual {
+    animation: none;
+  }
 }
 
 .part-preview img {

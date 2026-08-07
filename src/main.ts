@@ -228,6 +228,17 @@ const componentOrder: ComponentKind[] = [
   "cdn",
 ];
 const componentPreviewSources: Record<ComponentKind, string> = {
+  loadBalancer: "/assets/components-v2/load-balancer.png",
+  api: "/assets/components-v2/api-gateway.png",
+  redis: "/assets/components-v2/cache-node.png",
+  postgres: "/assets/components-v2/database-proxy.png",
+  queue: "/assets/components-v2/message-queue.png",
+  worker: "/assets/components-v2/worker-node.png",
+  geoIndex: "/assets/components-v2/geo-index.png",
+  objectStorage: "/assets/components-v2/object-storage.png",
+  cdn: "/assets/components-v2/cdn-edge.png",
+};
+const componentWorldSources: Record<ComponentKind, string> = {
   loadBalancer: "/assets/components-v1/load-balancer.png",
   api: "/assets/components-v1/api-gateway.png",
   redis: "/assets/components-v1/cache-node.png",
@@ -415,7 +426,13 @@ function formatErrorPercent(value: number, contract = value) {
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="game-shell">
     <canvas id="game-canvas" aria-label="Isometric system design workspace"></canvas>
+    <div class="workshop-art-layer workshop-back-wall" id="workshop-back-wall" aria-hidden="true">
+      <img src="/assets/workshop-v2/back-wall.png" alt="" />
+    </div>
     <div class="component-visual-layer" id="component-visual-layer" aria-hidden="true"></div>
+    <div class="workshop-art-layer workshop-foreground-deck" id="workshop-foreground-deck" aria-hidden="true">
+      <img src="/assets/workshop-v2/foreground-deck.png" alt="" />
+    </div>
 
     <div class="start-overlay" id="start-overlay" data-visible="true" aria-hidden="false">
       <section class="start-card" role="dialog" aria-modal="true" aria-labelledby="start-title">
@@ -825,6 +842,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas")!;
 const componentVisualLayer = document.querySelector<HTMLDivElement>("#component-visual-layer")!;
+const workshopBackWallLayer = document.querySelector<HTMLDivElement>("#workshop-back-wall")!;
+const workshopForegroundLayer = document.querySelector<HTMLDivElement>("#workshop-foreground-deck")!;
 canvas.dataset.reducedMotion = String(prefersReducedMotion);
 reducedMotionQuery.addEventListener("change", (event) => {
   prefersReducedMotion = event.matches;
@@ -1046,9 +1065,10 @@ renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 3.15;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
-camera.position.set(3.2, 10.4, 17.4);
-camera.lookAt(0, 0.2, 0);
-camera.zoom = 1.2;
+camera.position.set(-7.2, 21.5, 16.15);
+const cameraTargetHeight = 0.45;
+camera.lookAt(0, cameraTargetHeight, 0);
+camera.zoom = 1.43;
 camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1101,11 +1121,12 @@ const cameraOrbitRadius = Math.hypot(camera.position.x, camera.position.z);
 const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
+const referenceCameraAzimuth = cameraAzimuth;
 
-const ambientLight = new THREE.HemisphereLight(0xe7f5f2, 0x35566b, 5.35);
+const ambientLight = new THREE.HemisphereLight(0xdde8ef, 0x263c54, 5.55);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xe9f4ed, 5.05);
+const keyLight = new THREE.DirectionalLight(0xe9eef2, 5.05);
 keyLight.position.set(-9, 15, 11);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
@@ -1124,7 +1145,7 @@ const coolFill = new THREE.PointLight(0x4aa5b7, 6.9, 15, 2);
 coolFill.position.set(6, 4, 3);
 scene.add(coolFill);
 
-const frontFill = new THREE.DirectionalLight(0xb8e4df, 1.9);
+const frontFill = new THREE.DirectionalLight(0xb8cfe0, 2.05);
 frontFill.position.set(1, 7, 12);
 scene.add(frontFill);
 
@@ -1140,6 +1161,7 @@ const boardActivityMaterials: THREE.MeshStandardMaterial[] = [];
 const workshopPulseMaterials: THREE.MeshStandardMaterial[] = [];
 const workshopPulseLights: THREE.PointLight[] = [];
 const workshopPortalGlows: THREE.MeshBasicMaterial[] = [];
+const workshopAnimatedProps: THREE.Object3D[] = [];
 const paintedFloorTexture = createPixelWorkshopTexture("floor");
 const paintedWallTexture = createPixelWorkshopTexture("wall");
 const paintedMachineDarkTexture = createPixelWorkshopTexture("machine-dark");
@@ -1213,7 +1235,7 @@ boardGroup.add(paintedFloor);
 for (let row = 0; row < rows; row += 1) {
   for (let col = 0; col < columns; col += 1) {
     const variation = pseudoRandom(row * columns + col);
-    const tileTints = [0xb9c5c2, 0xaebfbd, 0xa7b8b8, 0xb3c2bf];
+    const tileTints = [0xd7ded9, 0xcbd5d0, 0xc4d0cd, 0xd0d8d3];
     const tileGeometry = new THREE.BoxGeometry(
       tileSize - 0.008,
       0.08 + variation * 0.025,
@@ -1747,15 +1769,15 @@ function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
   const dot = (color: string, x: number, y: number, size = 2) => fill(color, x, y, size, size);
 
   if (kind === "floor") {
-    fill("#526b7a", 0, 0, 256, 256);
+    fill("#566f7e", 0, 0, 256, 256);
     for (let row = 0; row < 8; row += 1) {
       for (let col = 0; col < 8; col += 1) {
         const x = col * 32;
         const y = row * 32;
-        fill("#213b4d", x, y, 32, 2);
-        fill("#274050", x, y, 2, 32);
+        fill("#213b4d", x, y, 32, 1);
+        fill("#274050", x, y, 1, 32);
         fill("#758c96", x + 2, y + 2, 28, 1);
-        fill((row + col) % 2 ? "#4d6878" : "#587180", x + 3, y + 4, 27, 26);
+        fill((row + col) % 2 ? "#506b79" : "#5b7381", x + 3, y + 4, 27, 26);
         dot("#193448", x + 5, y + 7, 1);
         dot("#7e95a0", x + 25, y + 25, 1);
         if ((row * 8 + col) % 5 === 0) {
@@ -1879,10 +1901,35 @@ function createWorkshopLabelTexture(lines: string[]) {
   context.lineWidth = 2;
   context.strokeRect(7, 7, 114, 42);
   context.fillStyle = "#b7fff0";
-  context.font = "bold 17px monospace";
+  context.font = "bold 19px Pixelify Sans, monospace";
   context.textAlign = "center";
   context.textBaseline = "middle";
   lines.forEach((line, index) => context.fillText(line, 64, 20 + index * 18));
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+function createWorkshopStencilTexture(text: string) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 192;
+  textureCanvas.height = 64;
+  const context = textureCanvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  context.clearRect(0, 0, textureCanvas.width, textureCanvas.height);
+  context.fillStyle = "rgba(147, 169, 174, 0.52)";
+  context.font = "900 43px monospace";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, 96, 34);
+  for (let index = 0; index < 18; index += 1) {
+    const x = 20 + Math.floor(pseudoRandom(index + 6200) * 152);
+    const y = 16 + Math.floor(pseudoRandom(index + 6300) * 34);
+    context.clearRect(x, y, 2 + index % 4, 1 + index % 2);
+  }
   const texture = new THREE.CanvasTexture(textureCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.NearestFilter;
@@ -1925,7 +1972,7 @@ function fasciaMaterial(color: number, roughness = 0.8, metalness = 0.3, bumpSca
 }
 
 function addMesh(
-  parent: THREE.Group,
+  parent: THREE.Object3D,
   geometry: THREE.BufferGeometry,
   meshMaterial: THREE.Material,
   position: [number, number, number],
@@ -2478,7 +2525,6 @@ function addEnvironment() {
   const propSage = casingMaterial(0x91aaa5, 0.8, 0.12, 0.012);
   const propCream = casingMaterial(0xbfc9c5, 0.84, 0.08, 0.01);
   const propAccent = casingMaterial(0x75bcb5, 0.7, 0.18, 0.012);
-  const propTank = casingMaterial(0x91aeb4, 0.78, 0.18, 0.014);
   const fasciaDark = fasciaMaterial(0x8195a0, 0.86, 0.24, 0.016);
   const fasciaBlue = fasciaMaterial(0x94a7ac, 0.82, 0.18, 0.014);
   const paintedBulkhead = new THREE.MeshBasicMaterial({
@@ -2501,6 +2547,19 @@ function addEnvironment() {
   addMesh(environmentGroup, new THREE.PlaneGeometry(9.7, 1.95), paintedBulkhead, [-6.325, 0.48, 0], [0, Math.PI / 2, 0]);
   addMesh(environmentGroup, new THREE.PlaneGeometry(9.7, 1.95), paintedBulkhead, [6.325, 0.48, 0], [0, -Math.PI / 2, 0]);
   addMesh(environmentGroup, new THREE.PlaneGeometry(12.8, 1.0), paintedBulkhead, [0, 0.1, 4.915], [0, Math.PI, 0]);
+
+  const bayStencil = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.9, 0.58),
+    new THREE.MeshBasicMaterial({
+      map: createWorkshopStencilTexture("SB-17"),
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  bayStencil.position.set(-3.6, 0.68, 5.52);
+  bayStencil.renderOrder = 5;
+  environmentGroup.add(bayStencil);
 
   for (let index = 0; index < 7; index += 1) {
     addEquipmentModule(-4.9 + index * 1.62, -4.88, 0, index, propSage, propCream, propDark, screen, propAccent);
@@ -2552,22 +2611,6 @@ function addEnvironment() {
     new THREE.Vector3(4.3, 0.17, 2.25), new THREE.Vector3(3.7, 0.16, 2.6),
   ], 0x3c6d82, 0.035);
 
-  // Tall translucent coolant tank on the right, echoing the reference silhouette.
-  addMesh(environmentGroup, new THREE.CylinderGeometry(0.64, 0.72, 2.65, 22), propTank, [5.72, 1.05, 0.35]);
-  addMesh(environmentGroup, new THREE.CylinderGeometry(0.51, 0.56, 1.75, 22), material(0x9bd0cc, {
-    transparent: true,
-    opacity: 0.5,
-    emissive: 0x386e77,
-    emissiveIntensity: 0.32,
-    roughness: 0.22,
-  }), [5.72, 1.0, 0.35]);
-  for (const y of [0.2, 1.05, 1.9]) {
-    addMesh(environmentGroup, new THREE.TorusGeometry(0.67, 0.075, 8, 24), propAccent, [5.72, y, 0.35], [Math.PI / 2, 0, 0]);
-  }
-  addMesh(environmentGroup, new THREE.CylinderGeometry(0.18, 0.25, 0.6, 14), propDark, [5.72, 2.66, 0.35]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(0.3, 1.02, 0.08), propDark, [5.72, 1.02, 0.915]);
-  addMesh(environmentGroup, new THREE.BoxGeometry(0.17, 0.76, 0.035), screen, [5.72, 1.02, 0.975]);
-
   // A legible fiber patch station replaces the old black service tunnel. It
   // explains the room as a network workshop and keeps this edge useful and bright.
   const uplink = new THREE.Group();
@@ -2592,7 +2635,38 @@ function addEnvironment() {
 
   addCrateStack(-5.7, 3.55, 0.1, 3, propCream, propAccent, propDark);
   addCrateStack(5.55, -3.35, -0.08, 3, propSage, propAccent, propDark);
+  addCrateStack(-3.1, 5.05, 0.05, 3, propCream, propAccent, propDark, 0.92);
+  addCrateStack(2.55, 5.0, -0.08, 4, propSage, propAccent, propDark, 0.92);
+  addWorkshopOperator(1.8, 2.25, propDark, propBlue, screen, propAccent);
   addReferenceWorkshopProps(dark, propDark, propBlue, propCream, screen, propAccent);
+}
+
+function addWorkshopOperator(
+  x: number,
+  z: number,
+  dark: THREE.Material,
+  body: THREE.Material,
+  screen: THREE.Material,
+  accent: THREE.Material,
+) {
+  const operator = new THREE.Group();
+  operator.position.set(x, 0.2, z);
+  operator.rotation.y = -0.42;
+  environmentGroup.add(operator);
+
+  addMesh(operator, new THREE.BoxGeometry(0.34, 0.62, 0.28), body, [0, 0.5, 0]);
+  addMesh(operator, new THREE.BoxGeometry(0.38, 0.15, 0.3), accent, [0, 0.66, 0]);
+  addMesh(operator, new THREE.CylinderGeometry(0.18, 0.2, 0.24, 8), dark, [0, 0.96, 0]);
+  addMesh(operator, new THREE.BoxGeometry(0.28, 0.08, 0.2), body, [0, 1.08, 0.02]);
+  for (const side of [-1, 1]) {
+    addMesh(operator, new THREE.BoxGeometry(0.12, 0.5, 0.12), dark, [side * 0.22, 0.47, 0], [0, 0, side * 0.16]);
+    addMesh(operator, new THREE.BoxGeometry(0.13, 0.5, 0.14), dark, [side * 0.1, 0.02, 0]);
+  }
+  const tablet = addMesh(operator, new THREE.BoxGeometry(0.4, 0.28, 0.05), dark, [0.27, 0.57, 0.24], [-0.3, 0.1, -0.15]);
+  addMesh(tablet, new THREE.BoxGeometry(0.3, 0.19, 0.02), screen, [0, 0, 0.04]);
+  operator.userData.baseY = operator.position.y;
+  operator.userData.motionPhase = 0.8;
+  workshopAnimatedProps.push(operator);
 }
 
 function addReferenceWorkshopProps(
@@ -2625,7 +2699,7 @@ function addReferenceWorkshopProps(
   addBench(-4.25, -4.05, 2.35);
   addBench(4.55, -3.95, 1.85, true);
 
-  for (const [rackX, phase] of [[2.55, 0], [3.55, 0.7]] as const) {
+  for (const [rackX, phase] of [[0.65, 0], [1.7, 0.7]] as const) {
     const rack = new THREE.Group();
     rack.position.set(rackX, 0, -4.52);
     environmentGroup.add(rack);
@@ -2642,12 +2716,12 @@ function addReferenceWorkshopProps(
   const railDark = material(0x183445, { roughness: 0.62, metalness: 0.5 });
   const railAccent = material(0xd09a45, { emissive: 0x4f3211, emissiveIntensity: 0.36, roughness: 0.58, metalness: 0.3 });
   for (const x of [-5.6, -3.7, -1.8, 1.8, 3.7, 5.6]) {
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.065, 0.82, 8), railDark, [x, 0.32, 4.63]);
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), railAccent, [x, 0.76, 4.63]);
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.065, 1.08, 8), railDark, [x, 0.72, 5.5]);
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), railAccent, [x, 1.28, 5.5]);
   }
   for (const [x, width] of [[-4.65, 1.82], [-2.75, 1.82], [2.75, 1.82], [4.65, 1.82]] as const) {
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.055, width, 8), railDark, [x, 0.72, 4.63], [0, 0, Math.PI / 2]);
-    addMesh(environmentGroup, new THREE.CylinderGeometry(0.025, 0.025, width, 8), railAccent, [x, 0.65, 4.66], [0, 0, Math.PI / 2]);
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.055, 0.055, width, 8), railDark, [x, 1.24, 5.5], [0, 0, Math.PI / 2]);
+    addMesh(environmentGroup, new THREE.CylinderGeometry(0.025, 0.025, width, 8), railAccent, [x, 1.1, 5.53], [0, 0, Math.PI / 2]);
   }
 
   addCable([
@@ -2671,7 +2745,7 @@ function addMaintenanceGantry(
   accent: THREE.Material,
 ) {
   const gantry = new THREE.Group();
-  gantry.position.set(0, 0, -4.66);
+  gantry.position.set(-1.05, 0, -4.66);
   environmentGroup.add(gantry);
 
   // A deep central service bay gives the room a readable architectural focus.
@@ -2693,7 +2767,7 @@ function addMaintenanceGantry(
   addMesh(gantry, new THREE.TorusGeometry(0.76, 0.12, 8, 24, Math.PI), cream, [0, 1.54, 0.65]);
   addMesh(gantry, new THREE.BoxGeometry(1.0, 0.42, 0.12), dark, [0, 1.86, 0.69]);
   const standbySign = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.82, 0.34),
+    new THREE.PlaneGeometry(1.0, 0.41),
     new THREE.MeshBasicMaterial({ map: createWorkshopLabelTexture(["SYSTEM", "STANDBY"]) }),
   );
   standbySign.position.set(0, 1.88, 0.79);
@@ -2714,7 +2788,10 @@ function addMaintenanceGantry(
   portalGlow.userData.motion = "portalGlow";
   gantry.add(portalGlow);
   for (let line = 0; line < 5; line += 1) {
-    addMesh(gantry, new THREE.BoxGeometry(0.94, 0.025, 0.018), screen, [0, 0.62 + line * 0.14, 0.69]);
+    addMesh(gantry, new THREE.BoxGeometry(0.94, 0.018, 0.018), screen, [0, 0.58 + line * 0.16, 0.69]);
+  }
+  for (const x of [-0.31, 0, 0.31]) {
+    addMesh(gantry, new THREE.BoxGeometry(0.018, 0.68, 0.018), screen, [x, 0.9, 0.69]);
   }
 
   // Alternating safety plates echo the painted maintenance language in the references.
@@ -2809,10 +2886,11 @@ function addCrateStack(
   cream: THREE.Material,
   rust: THREE.Material,
   dark: THREE.Material,
+  baseY = 0.38,
 ) {
   for (let index = 0; index < count; index += 1) {
     const crate = new THREE.Group();
-    crate.position.set(x + (index % 2) * 0.44, 0.38 + Math.floor(index / 2) * 0.58, z);
+    crate.position.set(x + (index % 2) * 0.44, baseY + Math.floor(index / 2) * 0.58, z);
     crate.rotation.y = rotation + (index % 2) * 0.08;
     environmentGroup.add(crate);
     addMesh(crate, new THREE.BoxGeometry(0.74, 0.52, 0.65), index % 2 ? rust : cream, [0, 0, 0]);
@@ -2904,8 +2982,18 @@ function updateCameraOrbit(delta: number) {
     cameraOrbitHeight,
     Math.cos(cameraAzimuth) * cameraOrbitRadius,
   );
-  camera.lookAt(0, 0.3, 0);
+  camera.lookAt(0, cameraTargetHeight, 0);
   canvas.dataset.cameraAzimuth = cameraAzimuth.toFixed(3);
+  const referenceDelta = shortestAngleDifference(referenceCameraAzimuth, cameraAzimuth);
+  const referenceFade = THREE.MathUtils.clamp(1 - Math.abs(referenceDelta) * 3.2, 0, 1);
+  workshopBackWallLayer.style.setProperty("--workshop-shift-x", `${(-referenceDelta * 105).toFixed(1)}px`);
+  workshopBackWallLayer.style.setProperty("--workshop-shift-y", `${(Math.abs(referenceDelta) * 12).toFixed(1)}px`);
+  workshopBackWallLayer.style.setProperty("--workshop-skew", `${(referenceDelta * -4.5).toFixed(2)}deg`);
+  workshopBackWallLayer.style.opacity = referenceFade.toFixed(3);
+  workshopForegroundLayer.style.setProperty("--workshop-shift-x", `${(referenceDelta * 145).toFixed(1)}px`);
+  workshopForegroundLayer.style.setProperty("--workshop-shift-y", `${(-Math.abs(referenceDelta) * 8).toFixed(1)}px`);
+  workshopForegroundLayer.style.setProperty("--workshop-skew", `${(referenceDelta * 3.2).toFixed(2)}deg`);
+  workshopForegroundLayer.style.opacity = referenceFade.toFixed(3);
 }
 
 function rotateView(direction: -1 | 1) {
@@ -2986,7 +3074,7 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
 
   const visual = document.createElement("img");
   visual.className = "component-visual";
-  visual.src = componentPreviewSources[kind];
+  visual.src = componentWorldSources[kind];
   visual.alt = "";
   visual.draggable = false;
   visual.dataset.kind = kind;
@@ -3594,7 +3682,7 @@ function updateGhost(kind: ComponentKind, grid: GridPosition | null) {
     scene.add(ghost);
     ghostVisual = document.createElement("img");
     ghostVisual.className = "component-visual component-visual-ghost";
-    ghostVisual.src = componentPreviewSources[kind];
+    ghostVisual.src = componentWorldSources[kind];
     ghostVisual.alt = "";
     ghostVisual.draggable = false;
     componentVisualLayer.append(ghostVisual);
@@ -3675,14 +3763,14 @@ function connect(
     ? [start, end]
     : [start, middleA, middleB, end];
   const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.03);
-  const cableMaterial = material(0x4c9fb7, {
-    emissive: 0x15566e,
-    emissiveIntensity: 0.62,
+  const cableMaterial = material(0x347a99, {
+    emissive: 0x123f58,
+    emissiveIntensity: 0.24,
     roughness: 0.42,
     metalness: 0.38,
   });
   const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 30, 0.045, 7, false),
+    new THREE.TubeGeometry(curve, 30, 0.028, 6, false),
     cableMaterial,
   );
   tube.receiveShadow = true;
@@ -3704,7 +3792,7 @@ function connect(
     roughness: 0.4,
     metalness: 0.32,
   });
-  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.17, 4), arrowMaterial);
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.13, 4), arrowMaterial);
   const arrowPosition = curve.getPointAt(0.64);
   const arrowDirection = curve.getTangentAt(0.64).normalize();
   arrow.position.copy(arrowPosition);
@@ -3737,7 +3825,7 @@ function connect(
   const joints = points.slice(1, -1);
   for (const point of joints) {
     const joint = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.065, 0.065, 0.065, 10),
+      new THREE.CylinderGeometry(0.048, 0.048, 0.055, 8),
       material(0x356f9d, { metalness: 0.35 }),
     );
     joint.position.copy(point).setY(0.5);
@@ -5714,7 +5802,7 @@ function updatePackets(delta: number) {
   for (const connection of connections) {
     connection.activity = Math.max(0, connection.activity - delta * 2.8);
     const inspectionHighlight = activeInspectionConnections.has(connection) ? 0.78 : 0;
-    connection.material.emissiveIntensity = 0.34 + connection.activity * 1.75 + inspectionHighlight + (connection === hoveredConnection ? 1.1 : 0);
+    connection.material.emissiveIntensity = 0.16 + connection.activity * 1.15 + inspectionHighlight + (connection === hoveredConnection ? 0.8 : 0);
     connection.annotation?.setAttribute("data-pulse", String(connection.activity > 0.18 || inspectionHighlight > 0));
   }
 
@@ -6308,6 +6396,12 @@ function updateWorkshopAnimations() {
   }
   for (const [index, portalGlow] of workshopPortalGlows.entries()) {
     portalGlow.opacity = prefersReducedMotion ? 0.34 : 0.28 + (0.5 + 0.5 * Math.sin(motionTime * 2.4 + index)) * 0.14;
+  }
+  for (const [index, prop] of workshopAnimatedProps.entries()) {
+    const baseY = prop.userData.baseY as number ?? prop.position.y;
+    const phase = prop.userData.motionPhase as number ?? index;
+    prop.position.y = baseY + (prefersReducedMotion ? 0 : Math.sin(motionTime * 1.4 + phase) * 0.015);
+    prop.rotation.z = prefersReducedMotion ? 0 : Math.sin(motionTime * 0.72 + phase) * 0.012;
   }
 }
 
