@@ -3211,6 +3211,963 @@ button,
   .briefing-button { min-height: 50px; }
 }
 
+/* --------------------------------------------------------------------------
+   CONCEPT 01 FIDELITY PASS
+   The approved generated frame is the layout specification for gameplay.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --concept-ink: #b9d7da;
+  --concept-ink-bright: #d5e7e6;
+  --concept-muted: #789ca5;
+  --concept-cyan: #5ce0da;
+  --concept-cyan-dim: #2a9398;
+  --concept-shell: #293f50;
+  --concept-shell-hi: #6d818b;
+  --concept-shell-mid: #405866;
+  --concept-shell-low: #132938;
+  --concept-well: #092432;
+  --concept-well-deep: #051923;
+  --concept-grid: #173747;
+  --concept-shadow: rgba(0, 9, 16, 0.72);
+  --font-ui: var(--font-pixel);
+}
+
+body {
+  color: var(--concept-ink);
+  background: #03121c;
+  font-family: var(--font-pixel);
+}
+
+.game-shell {
+  min-width: 920px;
+  min-height: 620px;
+  background:
+    radial-gradient(ellipse at 48% 42%, rgba(21, 72, 91, 0.3), transparent 52%),
+    linear-gradient(180deg, #051925 0%, #04202c 68%, #02313d 100%);
+}
+
+.game-shell::before {
+  opacity: 0.09;
+  background-size: 96px 96px;
+  mix-blend-mode: soft-light;
+}
+
+.game-shell::after {
+  background:
+    linear-gradient(rgba(32, 98, 112, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 98, 112, 0.08) 1px, transparent 1px),
+    radial-gradient(ellipse at center, transparent 58%, rgba(0, 11, 19, 0.42) 100%);
+  background-size: 48px 48px, 48px 48px, auto;
+  box-shadow: inset 0 0 90px rgba(0, 8, 15, 0.48);
+  opacity: 0.7;
+}
+
+#game-canvas {
+  filter: saturate(0.82) contrast(1.03) brightness(1.45) hue-rotate(6deg);
+  image-rendering: pixelated;
+}
+
+.brand,
+.campaign-dock,
+.view-controls {
+  display: none;
+}
+
+.topbar {
+  position: static;
+  inset: auto;
+}
+
+.mission-card,
+.parts-panel,
+.telemetry-panel,
+.selected-card,
+.incident-panel,
+.trace-readout {
+  color: var(--concept-ink);
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, transparent 7px, var(--concept-shell) 7px calc(100% - 7px), transparent calc(100% - 7px)),
+    linear-gradient(transparent 7px, var(--concept-shell) 7px calc(100% - 7px), transparent calc(100% - 7px));
+  box-shadow:
+    0 0 0 2px #0b202d,
+    0 0 0 4px #71838b,
+    0 0 0 6px #1a3040,
+    8px 10px 0 rgba(0, 9, 16, 0.62),
+    inset 0 0 0 2px #405969,
+    inset 0 0 0 4px #102633;
+}
+
+.mission-card::before,
+.parts-panel::before,
+.telemetry-panel::before,
+.selected-card::before,
+.incident-panel::before,
+.trace-readout::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 7px 7px, #172b38 0 2px, #88959a 2px 3px, #0b1d28 3px 5px, transparent 5px),
+    radial-gradient(circle at calc(100% - 7px) 7px, #172b38 0 2px, #88959a 2px 3px, #0b1d28 3px 5px, transparent 5px),
+    radial-gradient(circle at 7px calc(100% - 7px), #172b38 0 2px, #88959a 2px 3px, #0b1d28 3px 5px, transparent 5px),
+    radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), #172b38 0 2px, #88959a 2px 3px, #0b1d28 3px 5px, transparent 5px);
+}
+
+.panel-kicker,
+.mission-label,
+.mission-guide > span,
+.status-light,
+.budget {
+  color: var(--concept-cyan);
+  font-family: var(--font-pixel);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Parts inventory — tall equipment rail from the approved frame. */
+.parts-panel {
+  position: absolute;
+  z-index: 5;
+  top: 42px;
+  bottom: 42px;
+  left: 24px;
+  width: 250px;
+  min-height: 0;
+  padding: 13px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.parts-panel .panel-title {
+  flex: none;
+  min-height: 35px;
+  margin: 0 0 8px;
+  padding: 7px 8px 6px;
+  align-items: center;
+  border: 1px solid #486577;
+  background: var(--concept-well);
+  box-shadow:
+    inset 0 0 0 2px #061925,
+    0 2px 0 #0b1d28;
+}
+
+.parts-panel .panel-title h2 {
+  display: none;
+}
+
+.parts-panel .panel-kicker {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.budget {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.parts-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(112px, 1fr);
+  gap: 5px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.parts-list::-webkit-scrollbar {
+  display: none;
+}
+
+.part-card {
+  position: relative;
+  min-width: 0;
+  min-height: 112px;
+  padding: 8px 5px 6px;
+  display: grid;
+  grid-template-rows: 14px minmax(54px, 1fr) 14px;
+  gap: 2px;
+  place-items: stretch;
+  border: 1px solid #496376;
+  border-radius: 0;
+  color: var(--concept-ink);
+  background:
+    linear-gradient(90deg, rgba(78, 112, 128, 0.12) 1px, transparent 1px),
+    linear-gradient(rgba(78, 112, 128, 0.09) 1px, transparent 1px),
+    #092130;
+  background-size: 8px 8px, 8px 8px, auto;
+  box-shadow:
+    inset 0 0 0 2px #061722,
+    inset 0 -3px 0 #102c3d,
+    0 2px 0 #0b1822;
+  cursor: pointer;
+  transition-property: border-color, color, background-color, box-shadow, transform;
+  transition-duration: 120ms;
+  transition-timing-function: steps(2, end);
+}
+
+.part-card:hover,
+.part-card[aria-pressed="true"] {
+  transform: translateY(-1px);
+  border-color: #6bd9d5;
+  color: #dcf6f2;
+  background-color: #0d3040;
+  box-shadow:
+    inset 0 0 0 2px #071b27,
+    inset 0 -3px 0 #19465a,
+    0 0 0 1px rgba(91, 226, 220, 0.42),
+    0 3px 0 #07141d;
+}
+
+.part-card:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+.part-card:disabled {
+  transform: none;
+  opacity: 0.42;
+  filter: grayscale(0.7);
+}
+
+.part-name {
+  position: static;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #a9dce0;
+  font: 800 9px/14px var(--font-pixel);
+  letter-spacing: 0.015em;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.part-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 52px;
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(ellipse at 50% 76%, rgba(61, 158, 166, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(10, 35, 48, 0.2), rgba(3, 16, 24, 0.28));
+  box-shadow: none;
+}
+
+.part-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: saturate(0.92) contrast(1.12) brightness(1.14) drop-shadow(0 4px 1px rgba(0, 7, 13, 0.75));
+}
+
+.part-code {
+  display: none;
+}
+
+.part-cost {
+  position: static;
+  display: block;
+  overflow: hidden;
+  color: #65d4d1;
+  font: 800 10px/14px var(--font-pixel);
+  letter-spacing: 0.05em;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part-card[data-locked="true"]::after {
+  top: 27px;
+  right: 5px;
+  border-radius: 0;
+  font-size: 6px;
+}
+
+.parts-hint {
+  display: none;
+}
+
+.parts-hint b {
+  color: #a8c9cb;
+}
+
+.blueprint-actions {
+  display: none;
+}
+
+.blueprint-actions button {
+  min-width: 0;
+  min-height: 26px;
+  padding: 4px 2px;
+  overflow: hidden;
+  border: 1px solid #3b5667;
+  border-radius: 0;
+  color: #87aeb4;
+  background: #0a2230;
+  font: 800 6px/1 var(--font-pixel);
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.blueprint-actions button:hover {
+  color: #caf0ed;
+  border-color: #4fa6ac;
+  background: #103242;
+}
+
+.blueprint-actions button:active {
+  scale: 0.96;
+}
+
+.inventory-footer-button {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #466173;
+  border-radius: 0;
+  color: #61d8d3;
+  background: #0a2230;
+  box-shadow: inset 0 0 0 2px #061923;
+  font: 900 22px/1 var(--font-pixel);
+  cursor: pointer;
+  transition-property: color, background-color, transform;
+  transition-duration: 120ms;
+  transition-timing-function: steps(2, end);
+}
+
+.inventory-footer-button:hover {
+  color: #c6f3ef;
+  background: #103444;
+}
+
+.inventory-footer-button:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+.parts-list {
+  margin-bottom: 36px;
+}
+
+/* Mission console — right-side shell and recessed briefing well. */
+.mission-card {
+  position: absolute;
+  z-index: 6;
+  top: 34px;
+  right: 30px;
+  width: 438px;
+  min-height: 414px;
+  padding: 20px 20px 18px;
+  pointer-events: auto;
+  overflow: visible;
+}
+
+.mission-heading {
+  min-height: 31px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mission-label {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.mission-phase {
+  min-height: 28px;
+  padding: 7px 9px 6px;
+  border: 1px solid #487486;
+  border-radius: 0;
+  color: #a2d4d5;
+  background: #0a2937;
+  box-shadow: inset 0 -2px 0 #061a25;
+  font: 800 8px/1 var(--font-pixel);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mission-card h2 {
+  margin: 3px 0 15px;
+  color: var(--concept-ink-bright);
+  font: 900 18px/1.2 var(--font-pixel);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.mission-guide {
+  min-height: 154px;
+  margin: 0 0 8px;
+  padding: 14px 14px 13px;
+  border: 1px solid #456579;
+  border-radius: 0;
+  color: var(--concept-ink);
+  background:
+    linear-gradient(rgba(23, 64, 80, 0.18) 1px, transparent 1px),
+    var(--concept-well);
+  background-size: 100% 8px, auto;
+  box-shadow:
+    inset 0 0 0 2px #061923,
+    inset 0 -4px 0 #071b28,
+    0 2px 0 #102b3a;
+}
+
+.mission-guide > span {
+  display: block;
+  margin: 0 0 12px;
+  color: var(--concept-cyan);
+  font: 800 10px/1 var(--font-pixel);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mission-guide > strong {
+  display: block;
+  margin: 0 0 8px;
+  color: #d4e7e5;
+  font: 900 16px/1.25 var(--font-pixel);
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.mission-guide > p {
+  margin: 0;
+  color: #8eb1b8;
+  font: 700 11px/1.55 var(--font-pixel);
+  text-wrap: pretty;
+}
+
+.mission-objectives {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.objective-row {
+  position: relative;
+  min-height: 40px;
+  padding: 0 12px 0 37px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #456579;
+  border-radius: 0;
+  color: #9ebbc0;
+  background: #0a2432;
+  box-shadow:
+    inset 0 0 0 2px #061923,
+    inset 0 -3px 0 #071a25,
+    0 2px 0 #102b3a;
+}
+
+.objective-row::before {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #233f4e;
+  border-radius: 0;
+  background: #091a25;
+  box-shadow: 0 0 0 1px #59707b;
+  transform: translateY(-50%);
+}
+
+.objective-row span,
+.objective-row strong {
+  color: inherit;
+  font: 800 10px/1 var(--font-pixel);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.objective-row strong {
+  color: #bed4d6;
+  font-variant-numeric: tabular-nums;
+}
+
+.objective-row[data-met="true"] {
+  color: #9ee0d7;
+  background: #0c343d;
+}
+
+.objective-row[data-met="true"]::before {
+  border-color: #5ee0d5;
+  background: #4ed1c9;
+  box-shadow: 0 0 8px rgba(74, 220, 211, 0.65);
+}
+
+.objective-row[data-risk="true"] {
+  color: #df9aa4;
+  background: #322332;
+}
+
+/* Telemetry — wide readout deck with a vertical hardware control bank. */
+.telemetry-panel {
+  position: absolute;
+  z-index: 6;
+  right: 30px;
+  bottom: 32px;
+  width: 512px;
+  height: 293px;
+  min-height: 293px;
+  padding: 17px 18px 16px;
+  overflow: visible;
+}
+
+.status-row {
+  min-height: 31px;
+  margin: 0 0 9px;
+  padding: 0 2px;
+  align-items: center;
+  border: 0;
+}
+
+.status-row .panel-kicker {
+  margin: 0;
+  font-size: 13px;
+}
+
+.status-row h2 {
+  display: none;
+}
+
+.status-light {
+  position: relative;
+  min-width: 44px;
+  padding-right: 34px;
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
+}
+
+.status-light::before,
+.status-light::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4bd7cf;
+  box-shadow: 0 0 5px rgba(75, 215, 207, 0.7);
+  transform: translateY(-50%);
+}
+
+.status-light::before {
+  right: 20px;
+}
+
+.status-light::after {
+  right: 4px;
+  box-shadow: -8px 0 0 #2d777c, 0 0 5px rgba(75, 215, 207, 0.7);
+}
+
+.telemetry-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 126px;
+  gap: 10px;
+}
+
+.telemetry-readouts {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metrics {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.metric {
+  position: relative;
+  height: 60px;
+  min-height: 60px;
+  padding: 11px 184px 8px 10px;
+  display: block;
+  border: 1px solid #496577;
+  border-radius: 0;
+  color: #9abec2;
+  background: #08212e;
+  box-shadow:
+    inset 0 0 0 2px #061721,
+    inset 0 -3px 0 #0b1b25,
+    0 2px 0 #102b3a;
+}
+
+.metric::before {
+  content: "";
+  position: absolute;
+  top: 11px;
+  right: 10px;
+  bottom: 9px;
+  width: 172px;
+  border: 1px solid #28606b;
+  background:
+    linear-gradient(rgba(38, 82, 96, 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(38, 82, 96, 0.4) 1px, transparent 1px),
+    #061b28;
+  background-size: 11px 9px, 11px 9px, auto;
+  box-shadow: inset 0 0 0 1px #03131c;
+}
+
+.metric::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  right: 11px;
+  bottom: 10px;
+  width: 170px;
+  height: 1px;
+  background: #4ed6cf;
+  opacity: 0.8;
+  box-shadow: -18px -4px 0 -0.4px #3eaeb0, -40px -1px 0 -0.4px #3eaeb0;
+}
+
+.metric span,
+.metric strong {
+  position: relative;
+  z-index: 2;
+  display: block;
+  color: #8fc5c8;
+  font-family: var(--font-pixel);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metric span {
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.035em;
+}
+
+.metric strong {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delivery-meter {
+  display: none;
+}
+
+.signal-track {
+  display: none;
+}
+
+.test-sequence {
+  display: none;
+}
+
+.test-sequence-row span,
+.test-sequence-row strong,
+.bottleneck {
+  font-family: var(--font-pixel);
+}
+
+.test-sequence-row span {
+  font-size: 7px;
+  letter-spacing: 0.06em;
+}
+
+.test-sequence-row strong {
+  color: var(--concept-cyan);
+  font-size: 7px;
+}
+
+.test-progress {
+  height: 2px;
+  border-radius: 0;
+}
+
+.bottleneck {
+  margin-top: 5px;
+  font-size: 7px;
+  line-height: 1.35;
+}
+
+.telemetry-controls {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.run-button,
+.trace-button,
+.telemetry-export-button {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 58px;
+  margin: 0;
+  padding: 9px 8px;
+  display: grid;
+  grid-template-columns: 19px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #66808d;
+  border-radius: 0;
+  color: #8fd4d2;
+  background: #203c4b;
+  box-shadow:
+    inset 0 0 0 3px #112b39,
+    inset 0 -5px 0 #0e2633,
+    0 0 0 2px #081b27,
+    0 3px 0 #102430;
+  font: 900 8px/1.2 var(--font-pixel);
+  letter-spacing: 0.02em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition-property: color, background-color, border-color, transform;
+  transition-duration: 120ms;
+  transition-timing-function: steps(2, end);
+}
+
+.run-button:hover,
+.trace-button:hover,
+.telemetry-export-button:hover {
+  color: #d8f5f1;
+  border-color: #78d9d4;
+  background: #285061;
+}
+
+.run-button:active,
+.trace-button:active,
+.telemetry-export-button:active {
+  transform: translateY(2px) scale(0.96);
+}
+
+.run-button:disabled,
+.trace-button:disabled,
+.telemetry-export-button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.run-button i,
+.trace-button i,
+.telemetry-export-button i {
+  color: var(--concept-cyan);
+  font-style: normal;
+  font-size: 15px;
+  text-align: center;
+}
+
+.run-button span,
+.trace-button span,
+.telemetry-export-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-button kbd,
+.trace-button kbd,
+.telemetry-export-button kbd {
+  display: none;
+}
+
+/* The target keeps the build field clean; selection details remain on demand. */
+.component-label {
+  display: none;
+}
+
+.selected-card {
+  top: 38px;
+  left: 294px;
+  width: 232px;
+  padding: 13px;
+  background: var(--concept-shell);
+}
+
+.selected-card h3 {
+  color: var(--concept-ink-bright);
+  font-family: var(--font-pixel);
+  text-transform: uppercase;
+}
+
+.selected-card p {
+  color: #8caeb4;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+}
+
+.incident-panel {
+  right: 480px;
+  top: 36px;
+  width: 342px;
+  background: #293f50;
+}
+
+.trace-readout {
+  right: 548px;
+  bottom: 34px;
+  width: min(580px, calc(100vw - 860px));
+  background: #293f50;
+}
+
+.toast {
+  border-radius: 0;
+  color: #bfe0df;
+  background: #0a2734;
+  box-shadow: 0 0 0 2px #617984, 0 4px 0 #081824;
+  font-family: var(--font-pixel);
+}
+
+@media (max-width: 1280px) {
+  .parts-panel {
+    top: 28px;
+    bottom: 28px;
+    left: 18px;
+    width: 220px;
+  }
+
+  .mission-card {
+    top: 25px;
+    right: 22px;
+    width: 366px;
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .mission-guide {
+    min-height: 116px;
+    padding: 11px 12px;
+  }
+
+  .telemetry-panel {
+    right: 22px;
+    bottom: 25px;
+    width: 448px;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .telemetry-console {
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
+
+  .metric {
+    min-height: 52px;
+    padding-right: 155px;
+  }
+
+  .metric::before,
+  .metric::after {
+    width: 144px;
+  }
+}
+
+@media (max-height: 760px) {
+  .parts-panel {
+    top: 20px;
+    bottom: 20px;
+  }
+
+  .parts-list {
+    grid-auto-rows: minmax(90px, 1fr);
+  }
+
+  .part-card {
+    min-height: 90px;
+  }
+
+  .parts-hint {
+    display: none;
+  }
+
+  .mission-card {
+    top: 20px;
+    width: 360px;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .mission-card h2 {
+    margin-bottom: 9px;
+    font-size: 15px;
+  }
+
+  .mission-guide {
+    min-height: 84px;
+    padding: 9px 10px;
+  }
+
+  .mission-guide > span {
+    margin-bottom: 7px;
+  }
+
+  .mission-guide > strong {
+    margin-bottom: 5px;
+    font-size: 13px;
+  }
+
+  .objective-row {
+    min-height: 30px;
+    padding-left: 32px;
+  }
+
+  .mission-objectives {
+    gap: 4px;
+  }
+
+  .telemetry-panel {
+    bottom: 20px;
+    width: 430px;
+    height: 250px;
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .metric {
+    height: 49px;
+    min-height: 45px;
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+
+  .run-button,
+  .trace-button,
+  .telemetry-export-button {
+    min-height: 45px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -3222,9 +4179,10 @@ button,
   }
 }
 
+@layer rejected-naval-reskin {
 /* --------------------------------------------------------------------------
-   Concept 01 — naval workshop.
-   Midtone steel housings, inset instrument wells, crisp pixel geometry.
+   Previous naval reskin retained temporarily for reference. Layering keeps it
+   from overriding the approved Concept 01 fidelity pass above.
    -------------------------------------------------------------------------- */
 
 :root {
@@ -4022,4 +4980,5 @@ button:focus-visible {
   .bottleneck { margin-top: 5px; font-size: 9px; }
   .trace-button { min-height: 34px; margin-top: 6px; }
   .run-button { min-height: 43px; }
+}
 }

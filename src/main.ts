@@ -575,7 +575,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <section class="mission-card" id="mission-card" data-briefing="false" aria-labelledby="mission-title" tabindex="-1">
         <div class="mission-heading">
           <p class="mission-label" id="mission-label">Phase 01 · URL Shortener</p>
-          <span class="mission-phase" id="mission-phase">Build mode</span>
+          <button class="mission-phase" id="mission-phase" type="button" aria-label="Open runbook configuration">Build mode</button>
         </div>
         <h2 id="mission-title">Build a URL Shortener</h2>
         <div class="mission-guide" id="mission-guide" data-state="build" aria-live="polite">
@@ -624,7 +624,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section class="parts-panel" aria-labelledby="parts-title">
       <div class="panel-title">
         <div>
-          <p class="panel-kicker">Parts catalogue</p>
+          <p class="panel-kicker">Parts inventory</p>
           <h2 id="parts-title">System machines</h2>
         </div>
         <span class="budget" id="budget">$1,200</span>
@@ -636,39 +636,47 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <button id="load-blueprint-button" type="button">Restore saved</button>
         <button id="share-blueprint-button" type="button">Share link</button>
       </div>
+      <button class="inventory-footer-button" id="inventory-footer-button" type="button" aria-label="Return to campaign">⌄</button>
     </section>
 
     <section class="telemetry-panel" aria-labelledby="telemetry-title">
       <div class="status-row">
         <div>
-          <p class="panel-kicker">Live telemetry</p>
-          <h2 id="telemetry-title">Control desk</h2>
+          <p class="panel-kicker">Telemetry</p>
+          <h2 id="telemetry-title">System telemetry</h2>
         </div>
         <span class="status-light" id="status-light" data-running="false">Standby</span>
       </div>
-      <div class="metrics">
-        <div class="metric"><span>Throughput</span><strong id="throughput">0 r/s</strong></div>
-        <div class="metric"><span>p95 latency</span><strong id="latency">—</strong></div>
-        <div class="metric"><span>Errors</span><strong id="errors">0.0%</strong></div>
-      </div>
-      <div class="delivery-meter" id="delivery-meter" data-met="false" hidden>
-        <div><span id="delivery-label">Event freshness</span><strong id="delivery-value">— / 1.0s</strong></div>
-        <div class="delivery-track" aria-hidden="true"><i id="delivery-fill"></i></div>
-        <p id="delivery-status">No delivery path</p>
-      </div>
-      <div class="signal-track" id="signal-track" data-running="false" aria-hidden="true">
-        <div class="signal-line"></div>
-      </div>
-      <div class="test-sequence">
-        <div class="test-sequence-row">
-          <span id="test-phase">Awaiting topology</span>
-          <strong id="test-time">READY</strong>
+      <div class="telemetry-console">
+        <div class="telemetry-readouts">
+          <div class="metrics">
+            <div class="metric"><span>Throughput</span><strong id="throughput">0 r/s</strong></div>
+            <div class="metric"><span>p95 latency</span><strong id="latency">—</strong></div>
+            <div class="metric"><span>Error rate</span><strong id="errors">0.0%</strong></div>
+          </div>
+          <div class="delivery-meter" id="delivery-meter" data-met="false" hidden>
+            <div><span id="delivery-label">Event freshness</span><strong id="delivery-value">— / 1.0s</strong></div>
+            <div class="delivery-track" aria-hidden="true"><i id="delivery-fill"></i></div>
+            <p id="delivery-status">No delivery path</p>
+          </div>
+          <div class="signal-track" id="signal-track" data-running="false" aria-hidden="true">
+            <div class="signal-line"></div>
+          </div>
+          <div class="test-sequence">
+            <div class="test-sequence-row">
+              <span id="test-phase">Awaiting topology</span>
+              <strong id="test-time">READY</strong>
+            </div>
+            <div class="test-progress" aria-hidden="true"><span id="test-progress-fill"></span></div>
+            <p class="bottleneck" id="bottleneck">Install the core request path.</p>
+          </div>
         </div>
-        <div class="test-progress" aria-hidden="true"><span id="test-progress-fill"></span></div>
-        <p class="bottleneck" id="bottleneck">Install the core request path.</p>
-        <button class="trace-button" id="trace-button" type="button" aria-expanded="false">Trace a path <kbd>R</kbd></button>
+        <div class="telemetry-controls" aria-label="Telemetry controls">
+          <button class="run-button" id="run-button" type="button" data-running="false"><i aria-hidden="true">▶</i><span>Start traffic test</span></button>
+          <button class="trace-button" id="trace-button" type="button" aria-expanded="false"><i aria-hidden="true">◎</i><span>Trace a path</span><kbd>R</kbd></button>
+          <button class="telemetry-export-button" id="telemetry-export-button" type="button"><i aria-hidden="true">⇱</i><span>Export design</span></button>
+        </div>
       </div>
-      <button class="run-button" id="run-button" type="button" data-running="false">Start traffic test</button>
     </section>
 
     <section class="incident-panel" id="incident-panel" data-visible="false" data-status="active" aria-live="assertive">
@@ -813,8 +821,10 @@ const partsHint = document.querySelector<HTMLElement>("#parts-hint")!;
 const saveBlueprintButton = document.querySelector<HTMLButtonElement>("#save-blueprint-button")!;
 const loadBlueprintButton = document.querySelector<HTMLButtonElement>("#load-blueprint-button")!;
 const shareBlueprintButton = document.querySelector<HTMLButtonElement>("#share-blueprint-button")!;
+const inventoryFooterButton = document.querySelector<HTMLButtonElement>("#inventory-footer-button")!;
 const budgetElement = document.querySelector<HTMLSpanElement>("#budget")!;
 const runButton = document.querySelector<HTMLButtonElement>("#run-button")!;
+const telemetryExportButton = document.querySelector<HTMLButtonElement>("#telemetry-export-button")!;
 const statusLight = document.querySelector<HTMLSpanElement>("#status-light")!;
 const signalTrack = document.querySelector<HTMLDivElement>("#signal-track")!;
 const throughputElement = document.querySelector<HTMLElement>("#throughput")!;
@@ -838,7 +848,7 @@ const scrapButton = document.querySelector<HTMLButtonElement>("#scrap-button")!;
 const missionLabelElement = document.querySelector<HTMLElement>("#mission-label")!;
 const missionTitleElement = document.querySelector<HTMLElement>("#mission-title")!;
 const missionDescriptionElement = document.querySelector<HTMLElement>("#mission-description")!;
-const missionPhaseElement = document.querySelector<HTMLElement>("#mission-phase")!;
+const missionPhaseElement = document.querySelector<HTMLButtonElement>("#mission-phase")!;
 const missionGuide = document.querySelector<HTMLElement>("#mission-guide")!;
 const missionGuideStage = document.querySelector<HTMLElement>("#mission-guide-stage")!;
 const missionGuideTitle = document.querySelector<HTMLElement>("#mission-guide-title")!;
@@ -861,6 +871,14 @@ const traceTabs = document.querySelector<HTMLElement>("#trace-tabs")!;
 const traceRouteElement = document.querySelector<HTMLElement>("#trace-route")!;
 const traceExplanation = document.querySelector<HTMLElement>("#trace-explanation")!;
 const traceCloseButton = document.querySelector<HTMLButtonElement>("#trace-close-button")!;
+
+function setRunButtonLabel(label: string) {
+  runButton.innerHTML = `<i aria-hidden="true">${isRunning ? "■" : "▶"}</i><span>${label}</span>`;
+}
+
+function setTraceButtonLabel(label: string) {
+  traceButton.innerHTML = `<i aria-hidden="true">◎</i><span>${label}</span><kbd>R</kbd>`;
+}
 const resultOverlay = document.querySelector<HTMLElement>("#result-overlay")!;
 const resultCard = document.querySelector<HTMLElement>("#result-card")!;
 const resultKicker = document.querySelector<HTMLElement>("#result-kicker")!;
@@ -992,18 +1010,18 @@ for (const kind of componentOrder) {
   button.setAttribute("aria-pressed", "false");
   button.style.setProperty("--part-color", definition.cssColor);
   button.innerHTML = `
+    <span class="part-name">${contextualComponentLabel(kind)}</span>
     <span class="part-preview" aria-hidden="true">
       <img id="part-preview-${kind}" alt="" />
       <span class="part-code">${componentOrder.indexOf(kind) + 1} · ${definition.shortLabel}</span>
     </span>
-    <span class="part-name">${contextualComponentLabel(kind)}</span>
-    <span class="part-cost">$${definition.cost} · ${definition.role}</span>
+    <span class="part-cost">$${definition.cost}</span>
   `;
   partsList.append(button);
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x102a38, 22, 39);
+scene.fog = new THREE.Fog(0x0a1c2b, 22, 39);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1011,12 +1029,12 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.toneMappingExposure = 1.48;
+renderer.toneMappingExposure = 2.7;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
 camera.position.set(8.8, 16.2, 10.6);
 camera.lookAt(0, 0.3, 0);
-camera.zoom = 1;
+camera.zoom = 1.18;
 camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1070,10 +1088,10 @@ const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
 
-const ambientLight = new THREE.HemisphereLight(0xdceff2, 0x355864, 4.0);
+const ambientLight = new THREE.HemisphereLight(0xdce8eb, 0x273f55, 4.75);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xe9f4ed, 4.55);
+const keyLight = new THREE.DirectionalLight(0xe9f4ed, 5.05);
 keyLight.position.set(-9, 15, 11);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
@@ -1084,11 +1102,11 @@ keyLight.shadow.camera.bottom = -11;
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
 
-const blueRimFill = new THREE.PointLight(0x6c9ed1, 8.2, 15, 2);
+const blueRimFill = new THREE.PointLight(0x638fbe, 6.8, 15, 2);
 blueRimFill.position.set(-5, 5, -4);
 scene.add(blueRimFill);
 
-const coolFill = new THREE.PointLight(0x55c8c9, 8.5, 15, 2);
+const coolFill = new THREE.PointLight(0x4aa5b7, 6.9, 15, 2);
 coolFill.position.set(6, 4, 3);
 scene.add(coolFill);
 
@@ -1696,8 +1714,8 @@ type PixelWorkshopTextureKind = "floor" | "wall" | "machine-dark" | "machine-lig
 
 function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
   const textureCanvas = document.createElement("canvas");
-  textureCanvas.width = kind === "wall" ? 128 : 64;
-  textureCanvas.height = 64;
+  textureCanvas.width = kind === "floor" ? 256 : kind === "wall" ? 128 : 64;
+  textureCanvas.height = kind === "floor" ? 256 : 64;
   const context = textureCanvas.getContext("2d")!;
   context.imageSmoothingEnabled = false;
 
@@ -1708,44 +1726,51 @@ function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
   const dot = (color: string, x: number, y: number, size = 2) => fill(color, x, y, size, size);
 
   if (kind === "floor") {
-    fill("#667f87", 0, 0, 64, 64);
-    for (let row = 0; row < 2; row += 1) {
-      for (let col = 0; col < 2; col += 1) {
+    fill("#526b7a", 0, 0, 256, 256);
+    for (let row = 0; row < 8; row += 1) {
+      for (let col = 0; col < 8; col += 1) {
         const x = col * 32;
         const y = row * 32;
-        fill("#294653", x, y, 32, 2);
-        fill("#2d4854", x, y, 2, 32);
-        fill("#8ea2a1", x + 2, y + 2, 28, 2);
-        fill((row + col) % 2 ? "#617b84" : "#6c858b", x + 3, y + 4, 27, 26);
-        dot("#223f4d", x + 5, y + 7, 1);
-        dot("#8ba19e", x + 25, y + 25, 1);
+        fill("#213b4d", x, y, 32, 2);
+        fill("#274050", x, y, 2, 32);
+        fill("#758c96", x + 2, y + 2, 28, 1);
+        fill((row + col) % 2 ? "#4d6878" : "#587180", x + 3, y + 4, 27, 26);
+        dot("#193448", x + 5, y + 7, 1);
+        dot("#7e95a0", x + 25, y + 25, 1);
+        if ((row * 8 + col) % 5 === 0) {
+          fill("#365364", x + 8, y + 14, 11, 1);
+          fill("#2c4658", x + 18, y + 15, 6, 1);
+        }
       }
     }
-    fill("#4c6b70", 8, 13, 12, 2);
-    fill("#6f9290", 44, 46, 9, 2);
-    fill("#75908e", 48, 18, 6, 1);
+    for (let index = 0; index < 180; index += 1) {
+      const x = Math.floor(pseudoRandom(index * 3 + 91) * 252) + 2;
+      const y = Math.floor(pseudoRandom(index * 3 + 92) * 252) + 2;
+      const width = index % 7 === 0 ? 3 : index % 3 === 0 ? 2 : 1;
+      fill(index % 11 === 0 ? "#765540" : index % 2 ? "#314d5e" : "#6a8290", x, y, width, 1);
+    }
   } else if (kind === "wall") {
-    fill("#405d6b", 0, 0, 128, 64);
+    fill("#2d465b", 0, 0, 128, 64);
     for (let col = 0; col < 4; col += 1) {
       const x = col * 32;
-      fill("#1e3545", x, 0, 3, 64);
-      fill("#718b95", x + 3, 2, 27, 3);
-      fill(col % 2 ? "#466572" : "#4c6d78", x + 5, 8, 23, 48);
-      fill("#294857", x + 8, 13, 17, 3);
-      fill("#345361", x + 8, 20, 17, 24);
-      fill("#6f8992", x + 10, 22, 13, 3);
-      fill("#183846", x + 10, 29, 13, 11);
+      fill("#152b3d", x, 0, 3, 64);
+      fill("#627b8d", x + 3, 2, 27, 3);
+      fill(col % 2 ? "#344e62" : "#38566a", x + 5, 8, 23, 48);
+      fill("#213c50", x + 8, 13, 17, 3);
+      fill("#28465a", x + 8, 20, 17, 24);
+      fill("#5c7587", x + 10, 22, 13, 3);
+      fill("#123248", x + 10, 29, 13, 11);
       if (col % 2 === 0) fill("#55d7dc", x + 12, 32, 9, 3);
-      dot("#aebfbd", x + 7, 52);
-      dot("#203a49", x + 25, 52);
+      dot("#a1b1b5", x + 7, 52);
+      dot("#183449", x + 25, 52);
     }
-    fill("#172f40", 0, 59, 128, 5);
+    fill("#10283b", 0, 59, 128, 5);
   } else {
     const isDark = kind === "machine-dark";
     const isFascia = kind === "fascia";
-    const base = isDark ? "#405767" : isFascia ? "#506b79" : "#879ca1";
-    const shade = isDark ? "#233c4d" : isFascia ? "#304d5d" : "#536f79";
-    const light = isDark ? "#6d8490" : isFascia ? "#81979d" : "#abbab8";
+    const base = isDark ? "#34495c" : isFascia ? "#40586a" : "#768c98";
+    const shade = isDark ? "#1b3145" : isFascia ? "#263f54" : "#465e70";
+    const light = isDark ? "#607789" : isFascia ? "#708594" : "#a0b0b2";
     fill(base, 0, 0, 64, 64);
     for (let y = 0; y < 64; y += 16) {
       fill(shade, 0, y, 64, 3);
@@ -1952,34 +1977,34 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   }
 
   if (kind === "api") {
-    addMesh(group, new THREE.BoxGeometry(0.7, 0.94, 0.62), cream, [0, 0.7, 0]);
-    addMesh(group, new THREE.BoxGeometry(0.58, 0.25, 0.055), ink, [0, 0.87, 0.338]);
+    addMesh(group, new THREE.BoxGeometry(0.86, 0.7, 0.72), cream, [0, 0.55, 0]);
+    addMesh(group, new THREE.BoxGeometry(0.7, 0.22, 0.055), ink, [0, 0.62, 0.388]);
     for (let index = 0; index < 4; index += 1) {
-      addMesh(group, new THREE.BoxGeometry(0.46, 0.035, 0.022), dark, [0, 0.53 + index * 0.08, 0.37]);
+      addMesh(group, new THREE.BoxGeometry(0.56, 0.035, 0.022), dark, [0, 0.39 + index * 0.075, 0.418]);
     }
-    addMesh(group, new THREE.SphereGeometry(0.045, 10, 8), glass, [-0.2, 0.96, 0.382]);
-    addMesh(group, new THREE.SphereGeometry(0.045, 10, 8), material(0xa5ddff, { emissive: 0x245d9a, emissiveIntensity: 1 }), [-0.06, 0.96, 0.382]);
-    addMesh(group, new THREE.BoxGeometry(0.54, 0.1, 0.5), accent, [0, 1.22, -0.01]);
-    addMesh(group, new THREE.CylinderGeometry(0.055, 0.055, 0.28, 10), dark, [0.22, 1.42, 0], [0, 0, -0.1]);
-    const apiBeacon = addMesh(group, new THREE.SphereGeometry(0.075, 12, 10), glass, [0.245, 1.56, 0]);
+    addMesh(group, new THREE.SphereGeometry(0.045, 10, 8), glass, [-0.25, 0.75, 0.432]);
+    addMesh(group, new THREE.SphereGeometry(0.045, 10, 8), material(0xa5ddff, { emissive: 0x245d9a, emissiveIntensity: 1 }), [-0.1, 0.75, 0.432]);
+    addMesh(group, new THREE.BoxGeometry(0.66, 0.1, 0.58), accent, [0, 0.96, -0.01]);
+    addMesh(group, new THREE.CylinderGeometry(0.055, 0.055, 0.22, 10), dark, [0.26, 1.11, 0], [0, 0, -0.1]);
+    const apiBeacon = addMesh(group, new THREE.SphereGeometry(0.075, 12, 10), glass, [0.275, 1.23, 0]);
     apiBeacon.userData.motion = "beacon";
     apiBeacon.userData.phase = 0.2;
   }
 
   if (kind === "redis") {
-    addMesh(group, new THREE.BoxGeometry(0.8, 0.86, 0.66), accent, [0, 0.65, 0]);
-    addMesh(group, new THREE.BoxGeometry(0.67, 0.13, 0.055), dark, [0, 0.43, 0.355]);
-    addMesh(group, new THREE.BoxGeometry(0.67, 0.13, 0.055), dark, [0, 0.64, 0.355]);
-    addMesh(group, new THREE.BoxGeometry(0.67, 0.13, 0.055), dark, [0, 0.85, 0.355]);
-    for (const [index, y] of [0.43, 0.64, 0.85].entries()) {
+    addMesh(group, new THREE.BoxGeometry(0.9, 0.68, 0.74), accent, [0, 0.55, 0]);
+    addMesh(group, new THREE.BoxGeometry(0.74, 0.11, 0.055), dark, [0, 0.37, 0.395]);
+    addMesh(group, new THREE.BoxGeometry(0.74, 0.11, 0.055), dark, [0, 0.53, 0.395]);
+    addMesh(group, new THREE.BoxGeometry(0.74, 0.11, 0.055), dark, [0, 0.69, 0.395]);
+    for (const [index, y] of [0.37, 0.53, 0.69].entries()) {
       const memoryLight = addMesh(group, new THREE.BoxGeometry(0.16, 0.035, 0.022), glass, [0.12, y, 0.389]);
       memoryLight.material = glass.clone();
       memoryLight.userData.motion = "memoryLight";
       memoryLight.userData.phase = index / 3;
     }
-    addMesh(group, new THREE.BoxGeometry(0.86, 0.11, 0.72), dark, [0, 1.12, 0]);
-    addMesh(group, new THREE.CylinderGeometry(0.045, 0.045, 0.27, 10), dark, [-0.25, 1.32, 0]);
-    addMesh(group, new THREE.SphereGeometry(0.07, 12, 10), glass, [-0.25, 1.48, 0]);
+    addMesh(group, new THREE.BoxGeometry(0.94, 0.11, 0.78), dark, [0, 0.92, 0]);
+    addMesh(group, new THREE.CylinderGeometry(0.045, 0.045, 0.22, 10), dark, [-0.28, 1.08, 0]);
+    addMesh(group, new THREE.SphereGeometry(0.07, 12, 10), glass, [-0.28, 1.2, 0]);
   }
 
   if (kind === "postgres") {
@@ -1996,17 +2021,17 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   }
 
   if (kind === "loadBalancer") {
-    addMesh(group, new THREE.BoxGeometry(0.78, 0.65, 0.7), accent, [0, 0.54, 0]);
-    addMesh(group, new THREE.BoxGeometry(0.65, 0.44, 0.055), cream, [0, 0.58, 0.38]);
-    addMesh(group, new THREE.CylinderGeometry(0.19, 0.19, 0.07, 24), ink, [0, 0.61, 0.425], [Math.PI / 2, 0, 0]);
-    addMesh(group, new THREE.BoxGeometry(0.035, 0.18, 0.035), cream, [0.02, 0.69, 0.47], [0, 0, -0.55]);
+    addMesh(group, new THREE.BoxGeometry(0.88, 0.58, 0.78), accent, [0, 0.51, 0]);
+    addMesh(group, new THREE.BoxGeometry(0.72, 0.36, 0.055), cream, [0, 0.54, 0.425]);
+    addMesh(group, new THREE.CylinderGeometry(0.18, 0.18, 0.07, 16), ink, [0, 0.56, 0.47], [Math.PI / 2, 0, 0]);
+    addMesh(group, new THREE.BoxGeometry(0.035, 0.17, 0.035), cream, [0.02, 0.63, 0.51], [0, 0, -0.55]);
     for (const x of [-0.23, 0.23]) {
-      addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), glass, [x, 0.37, 0.43]);
+      addMesh(group, new THREE.SphereGeometry(0.04, 10, 8), glass, [x, 0.34, 0.47]);
     }
-    addMesh(group, new THREE.CylinderGeometry(0.24, 0.31, 0.16, 16), dark, [0, 1.03, 0]);
-    addMesh(group, new THREE.CylinderGeometry(0.08, 0.08, 0.32, 12), dark, [0, 1.24, 0]);
-    addMesh(group, new THREE.SphereGeometry(0.1, 14, 10), glass, [0, 1.43, 0]);
-    const radarSweep = addMesh(group, new THREE.BoxGeometry(0.46, 0.035, 0.06), accent, [0.12, 1.13, 0]);
+    addMesh(group, new THREE.CylinderGeometry(0.25, 0.32, 0.14, 12), dark, [0, 0.87, 0]);
+    addMesh(group, new THREE.CylinderGeometry(0.07, 0.07, 0.18, 10), dark, [0, 1.02, 0]);
+    addMesh(group, new THREE.SphereGeometry(0.085, 12, 8), glass, [0, 1.14, 0]);
+    const radarSweep = addMesh(group, new THREE.BoxGeometry(0.42, 0.035, 0.055), accent, [0.11, 0.96, 0]);
     radarSweep.userData.motion = "radarSweep";
   }
 
@@ -2038,24 +2063,38 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   }
 
   if (kind === "worker") {
-    addMesh(group, new THREE.CylinderGeometry(0.46, 0.52, 0.62, 8), accent, [0, 0.52, 0]);
-    addMesh(group, new THREE.BoxGeometry(0.74, 0.42, 0.055), ink, [0, 0.58, 0.43]);
-    for (const x of [-0.2, 0.2]) {
-      const fan = addMesh(group, new THREE.CylinderGeometry(0.145, 0.145, 0.055, 18), cream, [x, 0.63, 0.47], [Math.PI / 2, 0, 0]);
-      fan.userData.motion = "workerFan";
-      fan.userData.direction = x < 0 ? -1 : 1;
-      addMesh(group, new THREE.CylinderGeometry(0.045, 0.045, 0.065, 12), dark, [x, 0.63, 0.506], [Math.PI / 2, 0, 0]);
+    if (currentPhase.workload === "analytics") {
+      addMesh(group, new THREE.BoxGeometry(0.9, 0.3, 0.72), accent, [0, 0.37, 0]);
+      addMesh(group, new THREE.BoxGeometry(0.72, 0.13, 0.56), dark, [0, 0.59, -0.02]);
+      addMesh(group, new THREE.BoxGeometry(0.64, 0.46, 0.12), cream, [0, 0.82, -0.08], [-0.3, 0, 0]);
+      const analyticsScreen = addMesh(group, new THREE.BoxGeometry(0.5, 0.31, 0.035), glass, [0, 0.84, 0.01], [-0.3, 0, 0]);
+      analyticsScreen.material = glass.clone();
+      analyticsScreen.userData.motion = "memoryLight";
+      analyticsScreen.userData.phase = 0.25;
+      addMesh(group, new THREE.BoxGeometry(0.58, 0.08, 0.32), ink, [0, 0.55, 0.31], [-0.08, 0, 0]);
+      for (const x of [-0.18, -0.06, 0.06, 0.18]) {
+        addMesh(group, new THREE.BoxGeometry(0.055, 0.025, 0.025), x > 0.1 ? glass : cream, [x, 0.58, 0.46]);
+      }
+    } else {
+      addMesh(group, new THREE.CylinderGeometry(0.46, 0.52, 0.62, 8), accent, [0, 0.52, 0]);
+      addMesh(group, new THREE.BoxGeometry(0.74, 0.42, 0.055), ink, [0, 0.58, 0.43]);
+      for (const x of [-0.2, 0.2]) {
+        const fan = addMesh(group, new THREE.CylinderGeometry(0.145, 0.145, 0.055, 18), cream, [x, 0.63, 0.47], [Math.PI / 2, 0, 0]);
+        fan.userData.motion = "workerFan";
+        fan.userData.direction = x < 0 ? -1 : 1;
+        addMesh(group, new THREE.CylinderGeometry(0.045, 0.045, 0.065, 12), dark, [x, 0.63, 0.506], [Math.PI / 2, 0, 0]);
+      }
+      addMesh(group, new THREE.BoxGeometry(0.72, 0.12, 0.62), dark, [0, 0.9, 0]);
+      for (const x of [-0.24, -0.08, 0.08, 0.24]) {
+        const jobLight = addMesh(group, new THREE.BoxGeometry(0.08, 0.035, 0.035), glass, [x, 0.98, 0.18]);
+        jobLight.material = glass.clone();
+        jobLight.userData.motion = "memoryLight";
+        jobLight.userData.phase = x + 0.5;
+      }
+      addMesh(group, new THREE.BoxGeometry(0.18, 0.33, 0.18), cream, [0.31, 1.12, -0.15]);
+      const workerBeacon = addMesh(group, new THREE.SphereGeometry(0.065, 12, 10), glass, [0.31, 1.33, -0.15]);
+      workerBeacon.userData.motion = "beacon";
     }
-    addMesh(group, new THREE.BoxGeometry(0.72, 0.12, 0.62), dark, [0, 0.9, 0]);
-    for (const x of [-0.24, -0.08, 0.08, 0.24]) {
-      const jobLight = addMesh(group, new THREE.BoxGeometry(0.08, 0.035, 0.035), glass, [x, 0.98, 0.18]);
-      jobLight.material = glass.clone();
-      jobLight.userData.motion = "memoryLight";
-      jobLight.userData.phase = x + 0.5;
-    }
-    addMesh(group, new THREE.BoxGeometry(0.18, 0.33, 0.18), cream, [0.31, 1.12, -0.15]);
-    const workerBeacon = addMesh(group, new THREE.SphereGeometry(0.065, 12, 10), glass, [0.31, 1.33, -0.15]);
-    workerBeacon.userData.motion = "beacon";
   }
 
   if (kind === "geoIndex") {
@@ -2422,15 +2461,11 @@ function addEnvironment() {
   addCable([
     new THREE.Vector3(-5.9, 0.3, -2.9), new THREE.Vector3(-5.5, 0.24, -1.6),
     new THREE.Vector3(-5.1, 0.2, -0.2), new THREE.Vector3(-4.6, 0.17, 0.7),
-  ], 0x6cc6aa, 0.055);
+  ], 0x315f69, 0.035);
   addCable([
     new THREE.Vector3(5.95, 0.28, 2.9), new THREE.Vector3(5.2, 0.2, 2.35),
     new THREE.Vector3(4.3, 0.17, 2.25), new THREE.Vector3(3.7, 0.16, 2.6),
-  ], 0x64b8d0, 0.045);
-  addCable([
-    new THREE.Vector3(-2.5, 0.23, 4.75), new THREE.Vector3(-1.6, 0.17, 4.1),
-    new THREE.Vector3(-0.8, 0.15, 3.95), new THREE.Vector3(-0.25, 0.15, 3.35),
-  ], 0x8b83bd, 0.07);
+  ], 0x3c6d82, 0.035);
 
   // Tall translucent coolant tank on the right, echoing the reference silhouette.
   addMesh(environmentGroup, new THREE.CylinderGeometry(0.64, 0.72, 2.65, 22), propTank, [5.72, 1.05, 0.35]);
@@ -2867,7 +2902,8 @@ function updateMachineAnimations(delta: number) {
       ? 0
       : Math.sin(motionElapsed * (1.35 + activity) + node.id * 1.7) * (0.004 + activity * 0.009) + (failed ? Math.sin(motionElapsed * 29) * 0.012 : 0);
     group.position.y = gridToWorld(node.grid).y + (group.userData.dragLift as number) + idleBob;
-    group.scale.setScalar(Math.max(0.01, targetScale * spawnEase));
+    const renderedScale = Math.max(0.01, targetScale * spawnEase);
+    group.scale.set(renderedScale, renderedScale * 0.82, renderedScale);
     group.rotation.y = -0.08 + (!prefersReducedMotion && (overloaded || failed) ? Math.sin(motionElapsed * 34 + node.id) * (failed ? 0.03 : 0.018) : 0);
     group.rotation.z = prefersReducedMotion
       ? failed ? -0.035 : 0
@@ -3812,7 +3848,7 @@ function openOrCycleRequestTrace() {
   traceReadout.dataset.visible = "true";
   traceReadout.setAttribute("aria-hidden", "false");
   traceButton.setAttribute("aria-expanded", "true");
-  traceButton.innerHTML = "Trace next path <kbd>R</kbd>";
+  setTraceButtonLabel("Trace next path");
   renderInspectionRoute(alreadyVisible ? activeInspectionRouteIndex + 1 : 0);
 }
 
@@ -3821,7 +3857,7 @@ function closeRequestTrace(silent = false) {
   traceReadout.dataset.visible = "false";
   traceReadout.setAttribute("aria-hidden", "true");
   traceButton.setAttribute("aria-expanded", "false");
-  traceButton.innerHTML = "Trace a path <kbd>R</kbd>";
+  setTraceButtonLabel("Trace a path");
   activeInspectionConnections.clear();
   inspectionRoutes = [];
   if (wasVisible && !silent) traceButton.focus({ preventScroll: true });
@@ -4527,7 +4563,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
     const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo && contractReady;
     runButton.disabled = nodes.length === 0;
     runButton.dataset.ready = String(!isRunning && previewReady);
-    runButton.textContent = isRunning
+    setRunButtonLabel(isRunning
       ? "Stop lab workload · T"
       : nodes.length === 0
         ? "Place any machine first"
@@ -4535,31 +4571,31 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
           ? "Run broken graph · T"
         : previewReady
           ? "Start lab workload · T"
-          : "Run current experiment · T";
+          : "Run current experiment · T");
   } else if (isRunning && incidentMode === "active") {
     runButton.disabled = true;
     runButton.dataset.ready = "false";
-    runButton.textContent = incidentResponseRequiredKind
+    setRunButtonLabel(incidentResponseRequiredKind
       ? `Install 1 more ${componentDefinitions[incidentResponseRequiredKind].label}`
-      : "Restore incident envelope";
+      : "Restore incident envelope");
   } else if (isRunning && incidentMode === "recovering") {
     runButton.disabled = true;
     runButton.dataset.ready = "false";
-    runButton.textContent = "Recovery in progress";
+    setRunButtonLabel("Recovery in progress");
   } else if (isRunning) {
     runButton.disabled = false;
     runButton.dataset.ready = "false";
-    runButton.textContent = "Abort traffic test · T";
+    setRunButtonLabel("Abort traffic test · T");
   } else {
     const contractReady = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
     const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo && contractReady;
     runButton.disabled = !metrics.hasCore;
     runButton.dataset.ready = String(previewReady);
-    runButton.textContent = !metrics.hasCore
+    setRunButtonLabel(!metrics.hasCore
       ? "Complete request path first"
       : previewReady
         ? "Start production test · T"
-        : "Test current design · T";
+        : "Test current design · T");
   }
 }
 
@@ -4576,8 +4612,8 @@ function updateUi() {
     if (name) name.textContent = contextualComponentLabel(kind);
     const cost = button.querySelector<HTMLElement>(".part-cost");
     if (cost) cost.textContent = locked
-      ? `Unlocks in phase ${campaignPhases.findIndex((phase) => phase.unlocks.includes(kind)) + 1}`
-      : `$${componentDefinitions[kind].cost} · ${contextualComponentRole(kind)}`;
+      ? `Phase ${String(campaignPhases.findIndex((phase) => phase.unlocks.includes(kind)) + 1).padStart(2, "0")}`
+      : `$${componentDefinitions[kind].cost}`;
   });
   configCount.textContent = `${activeConfigs.size} config${activeConfigs.size === 1 ? "" : "s"}`;
   syncBlueprintUi();
@@ -4979,9 +5015,9 @@ function syncTestControls() {
   runButton.dataset.running = String(isRunning);
   statusLight.dataset.running = String(isRunning);
   signalTrack.dataset.running = String(isRunning);
-  runButton.textContent = isSandboxMode
+  setRunButtonLabel(isSandboxMode
     ? isRunning ? "Stop lab workload · T" : "Start lab workload · T"
-    : isRunning ? "Abort traffic test · T" : "Start traffic test · T";
+    : isRunning ? "Abort traffic test · T" : "Start traffic test · T");
   statusLight.textContent = isSandboxMode
     ? isRunning ? "Lab live" : "Sandbox"
     : isRunning ? "Live" : testPhase === "passed" ? "Certified" : "Standby";
@@ -5589,6 +5625,8 @@ enterSandboxButton.addEventListener("click", () => {
 dismissBriefingButton.addEventListener("click", dismissPhaseBriefing);
 missionsButton.addEventListener("click", openCampaignScreen);
 configsButton.addEventListener("click", openConfigScreen);
+inventoryFooterButton.addEventListener("click", openCampaignScreen);
+missionPhaseElement.addEventListener("click", openConfigScreen);
 closeConfigButton.addEventListener("click", () => closeConfigScreen(false));
 applyConfigButton.addEventListener("click", () => closeConfigScreen(true));
 configList.addEventListener("click", (event) => {
@@ -5909,6 +5947,7 @@ traceCloseButton.addEventListener("click", () => closeRequestTrace());
 saveBlueprintButton.addEventListener("click", saveBlueprint);
 loadBlueprintButton.addEventListener("click", restoreBlueprint);
 shareBlueprintButton.addEventListener("click", () => void shareBlueprint());
+telemetryExportButton.addEventListener("click", () => void shareBlueprint());
 
 runButton.addEventListener("click", () => {
   if (isRunning) stopTest();
