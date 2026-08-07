@@ -1,6 +1,6 @@
 export type WorkloadTrafficPattern = "steady" | "wave" | "burst";
 
-function deterministicUnit(seed: number, index: number) {
+export function workloadSeedUnit(seed: number, index: number) {
   let value = (seed ^ Math.imul(index + 1, 0x45d9f3b)) >>> 0;
   value ^= value << 13;
   value ^= value >>> 17;
@@ -24,6 +24,6 @@ export function workloadDemandAt(
   }
   const bucket = Math.floor(safeTime / 2);
   const peak = (bucket + seed) % 4 === 0;
-  const factor = peak ? 1 : 0.46 + deterministicUnit(seed, bucket) * 0.26;
+  const factor = peak ? 1 : 0.46 + workloadSeedUnit(seed, bucket) * 0.26;
   return Math.round(safePeak * factor);
 }

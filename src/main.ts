@@ -35,7 +35,7 @@ import {
   encodeSharedBlueprint,
   type SharedBlueprintV1,
 } from "./simulation/blueprintCodec.ts";
-import { workloadDemandAt, type WorkloadTrafficPattern } from "./simulation/workloadTrace.ts";
+import { workloadDemandAt, workloadSeedUnit, type WorkloadTrafficPattern } from "./simulation/workloadTrace.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -1238,6 +1238,7 @@ const nodes: PlacedComponent[] = [];
 const connections: Connection[] = [];
 const authoredConnections: AuthoredConnection[] = [];
 const packets: Packet[] = [];
+let packetSequence = 0;
 const trafficRoutes: Connection[][] = [];
 let inspectionRoutes: InspectionRoute[] = [];
 let activeInspectionRouteIndex = 0;
@@ -5209,6 +5210,10 @@ function startTest() {
   stableElapsed = 0;
   currentDemand = Math.max(100, Math.round(targetRps * 0.2));
   packetAccumulator = 0;
+  packetSequence = 0;
+  nextTrafficRoute = 0;
+  clearGroup(packetsGroup);
+  packets.length = 0;
   testTimeElement.dataset.state = "live";
   syncTestControls();
   missionPhaseElement.textContent = "Traffic ramp";
@@ -5365,13 +5370,15 @@ function spawnPacketOnRoute(route: Connection[]) {
   }
   packetsGroup.add(mesh);
   route[0].activity = 1;
+  const packetIndex = packetSequence++;
+  const visualSeed = isSandboxMode ? sandboxTraceSeed : currentPhaseIndex + 1;
   packets.push({
     mesh,
     route,
     segmentIndex: 0,
     progress: 0,
-    speed: 0.82 + Math.random() * 0.22,
-    phase: Math.random() * Math.PI * 2,
+    speed: 0.82 + workloadSeedUnit(visualSeed, packetIndex * 2) * 0.22,
+    phase: workloadSeedUnit(visualSeed, packetIndex * 2 + 1) * Math.PI * 2,
   });
 }
 

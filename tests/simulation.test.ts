@@ -29,7 +29,7 @@ import {
   maximumSharedBlueprintLength,
   type SharedBlueprintV1,
 } from "../src/simulation/blueprintCodec.ts";
-import { workloadDemandAt } from "../src/simulation/workloadTrace.ts";
+import { workloadDemandAt, workloadSeedUnit } from "../src/simulation/workloadTrace.ts";
 
 const options = { demand: 1_200, latencySlo: 115, errorSlo: 1.5 };
 
@@ -510,4 +510,6 @@ test("seeded workload traces replay the same demand timeline", () => {
   assert.equal(workloadDemandAt("burst", 1_000, 7, 2), 1_000);
   assert.equal(workloadDemandAt("steady", 1_000, 999, 200), 1_000);
   assert.ok(timestamps.every((seconds) => workloadDemandAt("wave", 1_000, 42, seconds) <= 1_000));
+  assert.equal(workloadSeedUnit(7, 12), workloadSeedUnit(7, 12));
+  assert.notEqual(workloadSeedUnit(7, 12), workloadSeedUnit(8, 12));
 });
