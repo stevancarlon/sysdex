@@ -286,8 +286,34 @@ const sandboxPresets: Record<WorkloadKind, {
   },
 };
 
-function createSandboxPhase(workload: WorkloadKind, demand: number): CampaignPhase {
+type SandboxContract = {
+  latencySlo: number;
+  errorSlo: number;
+  minimumDeliveryPercent: number | null;
+  maxLagSeconds: number | null;
+};
+
+function defaultSandboxContract(workload: WorkloadKind): SandboxContract {
   const preset = sandboxPresets[workload];
+  return {
+    latencySlo: preset.latencySlo,
+    errorSlo: preset.errorSlo,
+    minimumDeliveryPercent: preset.backgroundSlo?.minimumDeliveryPercent ?? null,
+    maxLagSeconds: preset.backgroundSlo?.maxLagSeconds ?? null,
+  };
+}
+
+function createSandboxPhase(workload: WorkloadKind, demand: number, contract: SandboxContract): CampaignPhase {
+  const preset = sandboxPresets[workload];
+  const backgroundSlo = preset.backgroundSlo
+    && contract.minimumDeliveryPercent !== null
+    && contract.maxLagSeconds !== null
+    ? {
+      label: preset.backgroundSlo.label,
+      minimumDeliveryPercent: contract.minimumDeliveryPercent,
+      maxLagSeconds: contract.maxLagSeconds,
+    }
+    : undefined;
   return {
     index: campaignPhases.length,
     name: `Free Lab · ${preset.name}`,
@@ -298,9 +324,9 @@ function createSandboxPhase(workload: WorkloadKind, demand: number): CampaignPha
     description: preset.description,
     lesson: preset.lesson,
     targetRps: demand,
-    latencySlo: preset.latencySlo,
-    errorSlo: preset.errorSlo,
-    backgroundSlo: preset.backgroundSlo,
+    latencySlo: contract.latencySlo,
+    errorSlo: contract.errorSlo,
+    backgroundSlo,
     budget: 99_999,
     certificationSeconds: 5,
     testTimeLimit: Number.POSITIVE_INFINITY,
@@ -328,6 +354,7 @@ let currentPhase: CampaignPhase = campaignPhases[currentPhaseIndex];
 let isSandboxMode = false;
 let sandboxWorkload: WorkloadKind = "general";
 let sandboxTargetRps = 3_000;
+let sandboxContract = defaultSandboxContract(sandboxWorkload);
 let totalBudget = currentPhase.budget;
 let targetRps = currentPhase.targetRps;
 let latencySlo = currentPhase.latencySlo;
@@ -352,6 +379,14 @@ function contextualComponentRole(kind: ComponentKind) {
   if (currentPhase.workload === "streaming") return "Video job processor";
   if (currentPhase.workload === "dispatch") return "Location-event processor";
   return componentDefinitions.worker.role;
+}
+
+function errorContractDecimals(value: number) {
+  return Math.round(value * 100) % 10 === 0 ? 1 : 2;
+}
+
+function formatErrorPercent(value: number, contract = value) {
+  return value.toFixed(errorContractDecimals(contract));
 }
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
@@ -407,10 +442,15 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div><span>Traffic contract</span><strong id="sandbox-demand-value">3,000 r/s</strong></div>
           <input id="sandbox-demand-input" type="range" min="500" max="10000" step="500" value="3000" aria-label="Sandbox traffic target" />
         </div>
-        <div class="sandbox-contracts" aria-label="Selected sandbox contracts">
-          <span><small>p95 latency</small><strong id="sandbox-latency-contract">≤ 95 ms</strong></span>
-          <span><small>Error rate</small><strong id="sandbox-error-contract">&lt; 0.5%</strong></span>
-          <span id="sandbox-data-contract" hidden><small>Data delivery</small><strong id="sandbox-data-contract-value">No background contract</strong></span>
+        <div class="sandbox-contract-heading">
+          <span>Define the service contract</span>
+          <button id="reset-sandbox-contract-button" type="button">Reset preset</button>
+        </div>
+        <div class="sandbox-contracts" aria-label="Editable sandbox contracts">
+          <label><small>p95 latency</small><span><input id="sandbox-latency-contract" type="number" min="20" max="500" step="5" value="95" aria-label="Maximum p95 latency in milliseconds" /><b>ms</b></span></label>
+          <label><small>Error ceiling</small><span><input id="sandbox-error-contract" type="number" min="0.05" max="10" step="0.05" value="0.5" aria-label="Maximum error percentage" /><b>%</b></span></label>
+          <label id="sandbox-delivery-contract" hidden><small>Delivery floor</small><span><input id="sandbox-delivery-contract-value" type="number" min="80" max="100" step="0.1" value="99.5" aria-label="Minimum background delivery percentage" /><b>%</b></span></label>
+          <label id="sandbox-lag-contract" hidden><small>Freshness lag</small><span><input id="sandbox-lag-contract-value" type="number" min="0.1" max="30" step="0.1" value="1" aria-label="Maximum background delivery lag in seconds" /><b>s</b></span></label>
         </div>
         <div class="sandbox-footer">
           <p><b>Unlimited lab budget.</b> Save variants, trace paths, and share any valid graph.</p>
@@ -854,10 +894,13 @@ const closeSandboxButton = document.querySelector<HTMLButtonElement>("#close-san
 const sandboxWorkloads = document.querySelector<HTMLElement>("#sandbox-workloads")!;
 const sandboxDemandInput = document.querySelector<HTMLInputElement>("#sandbox-demand-input")!;
 const sandboxDemandValue = document.querySelector<HTMLElement>("#sandbox-demand-value")!;
-const sandboxLatencyContract = document.querySelector<HTMLElement>("#sandbox-latency-contract")!;
-const sandboxErrorContract = document.querySelector<HTMLElement>("#sandbox-error-contract")!;
-const sandboxDataContract = document.querySelector<HTMLElement>("#sandbox-data-contract")!;
-const sandboxDataContractValue = document.querySelector<HTMLElement>("#sandbox-data-contract-value")!;
+const sandboxLatencyContract = document.querySelector<HTMLInputElement>("#sandbox-latency-contract")!;
+const sandboxErrorContract = document.querySelector<HTMLInputElement>("#sandbox-error-contract")!;
+const sandboxDeliveryContract = document.querySelector<HTMLElement>("#sandbox-delivery-contract")!;
+const sandboxDeliveryContractValue = document.querySelector<HTMLInputElement>("#sandbox-delivery-contract-value")!;
+const sandboxLagContract = document.querySelector<HTMLElement>("#sandbox-lag-contract")!;
+const sandboxLagContractValue = document.querySelector<HTMLInputElement>("#sandbox-lag-contract-value")!;
+const resetSandboxContractButton = document.querySelector<HTMLButtonElement>("#reset-sandbox-contract-button")!;
 const enterSandboxButton = document.querySelector<HTMLButtonElement>("#enter-sandbox-button")!;
 const phaseBriefingOverlay = document.querySelector<HTMLElement>("#phase-briefing-overlay")!;
 const phaseBriefingEyebrow = document.querySelector<HTMLElement>("#phase-briefing-eyebrow")!;
@@ -1305,7 +1348,7 @@ function renderPhaseBriefing() {
   briefingToolboxLabel.textContent = currentPhaseIndex === 1 ? "Inherited + available parts" : "Available parts";
   briefingTargetRps.textContent = `${currentPhase.targetRps.toLocaleString("en-US")} r/s`;
   briefingTargetLatency.textContent = `p95 ≤ ${currentPhase.latencySlo} ms`;
-  briefingTargetErrors.textContent = `< ${currentPhase.errorSlo.toFixed(1)}%`;
+  briefingTargetErrors.textContent = `< ${formatErrorPercent(currentPhase.errorSlo)}%`;
   briefingTargets.dataset.count = currentPhase.backgroundSlo ? "4" : "3";
   briefingBackgroundTarget.hidden = !currentPhase.backgroundSlo;
   if (currentPhase.backgroundSlo) {
@@ -1374,6 +1417,62 @@ function setPhaseParameters(index: number) {
   applyPhaseParameters(campaignPhases[index], index);
 }
 
+function normalizeSandboxContract(workload: WorkloadKind, contract: SandboxContract): SandboxContract {
+  const preset = sandboxPresets[workload];
+  const clamp = (value: number, minimum: number, maximum: number, fallback: number) =>
+    Number.isFinite(value) ? THREE.MathUtils.clamp(value, minimum, maximum) : fallback;
+  return {
+    latencySlo: Math.round(clamp(contract.latencySlo, 20, 500, preset.latencySlo)),
+    errorSlo: Math.round(clamp(contract.errorSlo, 0.05, 10, preset.errorSlo) * 100) / 100,
+    minimumDeliveryPercent: preset.backgroundSlo
+      ? Math.round(clamp(
+        contract.minimumDeliveryPercent ?? preset.backgroundSlo.minimumDeliveryPercent,
+        80,
+        100,
+        preset.backgroundSlo.minimumDeliveryPercent,
+      ) * 10) / 10
+      : null,
+    maxLagSeconds: preset.backgroundSlo
+      ? Math.round(clamp(
+        contract.maxLagSeconds ?? preset.backgroundSlo.maxLagSeconds,
+        0.1,
+        30,
+        preset.backgroundSlo.maxLagSeconds,
+      ) * 10) / 10
+      : null,
+  };
+}
+
+function sandboxContractFromSearch(params: URLSearchParams, workload: WorkloadKind): SandboxContract | null {
+  const preset = sandboxPresets[workload];
+  const readNumber = (key: string, fallback: number, minimum: number, maximum: number) => {
+    if (!params.has(key)) return fallback;
+    const value = Number(params.get(key));
+    return Number.isFinite(value) && value >= minimum && value <= maximum ? value : null;
+  };
+  const latency = readNumber("p95", preset.latencySlo, 20, 500);
+  const errors = readNumber("err", preset.errorSlo, 0.05, 10);
+  if (latency === null || errors === null) return null;
+  if (!preset.backgroundSlo) {
+    if (params.has("delivery") || params.has("lag")) return null;
+    return normalizeSandboxContract(workload, {
+      latencySlo: latency,
+      errorSlo: errors,
+      minimumDeliveryPercent: null,
+      maxLagSeconds: null,
+    });
+  }
+  const delivery = readNumber("delivery", preset.backgroundSlo.minimumDeliveryPercent, 80, 100);
+  const lag = readNumber("lag", preset.backgroundSlo.maxLagSeconds, 0.1, 30);
+  if (delivery === null || lag === null) return null;
+  return normalizeSandboxContract(workload, {
+    latencySlo: latency,
+    errorSlo: errors,
+    minimumDeliveryPercent: delivery,
+    maxLagSeconds: lag,
+  });
+}
+
 function updateSandboxSetupUi() {
   const preset = sandboxPresets[sandboxWorkload];
   sandboxWorkloads.querySelectorAll<HTMLButtonElement>("button[data-workload]").forEach((button) => {
@@ -1381,12 +1480,24 @@ function updateSandboxSetupUi() {
   });
   sandboxDemandInput.value = String(sandboxTargetRps);
   sandboxDemandValue.textContent = `${sandboxTargetRps.toLocaleString("en-US")} r/s`;
-  sandboxLatencyContract.textContent = `≤ ${preset.latencySlo} ms`;
-  sandboxErrorContract.textContent = `< ${preset.errorSlo.toFixed(2).replace(/0$/, "")}%`;
-  sandboxDataContract.hidden = !preset.backgroundSlo;
+  sandboxLatencyContract.value = String(sandboxContract.latencySlo);
+  sandboxErrorContract.value = String(sandboxContract.errorSlo);
+  sandboxDeliveryContract.hidden = !preset.backgroundSlo;
+  sandboxLagContract.hidden = !preset.backgroundSlo;
   if (preset.backgroundSlo) {
-    sandboxDataContractValue.textContent = `≥ ${preset.backgroundSlo.minimumDeliveryPercent.toFixed(1)}% · lag ≤ ${preset.backgroundSlo.maxLagSeconds.toFixed(1)}s`;
+    sandboxDeliveryContractValue.value = String(sandboxContract.minimumDeliveryPercent ?? preset.backgroundSlo.minimumDeliveryPercent);
+    sandboxLagContractValue.value = String(sandboxContract.maxLagSeconds ?? preset.backgroundSlo.maxLagSeconds);
   }
+}
+
+function commitSandboxContractInputs() {
+  sandboxContract = normalizeSandboxContract(sandboxWorkload, {
+    latencySlo: Number(sandboxLatencyContract.value),
+    errorSlo: Number(sandboxErrorContract.value),
+    minimumDeliveryPercent: Number(sandboxDeliveryContractValue.value),
+    maxLagSeconds: Number(sandboxLagContractValue.value),
+  });
+  updateSandboxSetupUi();
 }
 
 function openSandboxSetup() {
@@ -1401,7 +1512,7 @@ function closeSandboxSetup() {
   sandboxOverlay.setAttribute("aria-hidden", "true");
 }
 
-function beginSandboxSession(workload: WorkloadKind, demand: number) {
+function beginSandboxSession(workload: WorkloadKind, demand: number, contract = sandboxContract) {
   stopTest(true);
   hideResult();
   resetTopologyEditor();
@@ -1410,8 +1521,9 @@ function beginSandboxSession(workload: WorkloadKind, demand: number) {
   pendingConfigs.clear();
   sandboxWorkload = workload;
   sandboxTargetRps = Math.round(THREE.MathUtils.clamp(demand, 500, 10_000) / 500) * 500;
+  sandboxContract = normalizeSandboxContract(sandboxWorkload, contract);
   isSandboxMode = true;
-  applyPhaseParameters(createSandboxPhase(sandboxWorkload, sandboxTargetRps), campaignPhases.length);
+  applyPhaseParameters(createSandboxPhase(sandboxWorkload, sandboxTargetRps, sandboxContract), campaignPhases.length);
   incidentTriggered = false;
   incidentMode = "pending";
   incidentTargetNodeId = null;
@@ -2736,9 +2848,21 @@ function clearLaboratory() {
 
 function blueprintStorageKey(phaseIndex = currentPhaseIndex) {
   if (isSandboxMode && phaseIndex === campaignPhases.length) {
-    return `sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}`;
+    const dataContract = currentPhase.backgroundSlo
+      ? `-${currentPhase.backgroundSlo.minimumDeliveryPercent}-${currentPhase.backgroundSlo.maxLagSeconds}`
+      : "-none";
+    return `sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}-${latencySlo}-${errorSlo}${dataContract}`;
   }
   return `sysdex-blueprint-v1-${phaseIndex}`;
+}
+
+function usesDefaultSandboxContract() {
+  if (!isSandboxMode) return false;
+  const preset = sandboxPresets[currentPhase.workload];
+  return latencySlo === preset.latencySlo
+    && errorSlo === preset.errorSlo
+    && (currentPhase.backgroundSlo?.minimumDeliveryPercent ?? null) === (preset.backgroundSlo?.minimumDeliveryPercent ?? null)
+    && (currentPhase.backgroundSlo?.maxLagSeconds ?? null) === (preset.backgroundSlo?.maxLagSeconds ?? null);
 }
 
 function validateBlueprintCandidate(value: unknown): SavedBlueprintV1 | null {
@@ -2796,12 +2920,20 @@ function validateBlueprintCandidate(value: unknown): SavedBlueprintV1 | null {
 }
 
 function readSavedBlueprint(): SavedBlueprintV1 | null {
-  try {
-    const raw = window.localStorage.getItem(blueprintStorageKey());
-    return raw ? validateBlueprintCandidate(JSON.parse(raw)) : null;
-  } catch {
-    return null;
+  const keys = [blueprintStorageKey()];
+  if (usesDefaultSandboxContract()) {
+    keys.push(`sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}`);
   }
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      const validated = raw ? validateBlueprintCandidate(JSON.parse(raw)) : null;
+      if (validated) return validated;
+    } catch {
+      // Ignore a damaged slot and keep checking compatible fallback keys.
+    }
+  }
+  return null;
 }
 
 function createCurrentBlueprint(): SavedBlueprintV1 {
@@ -2948,6 +3080,12 @@ async function shareBlueprint() {
   if (isSandboxMode) {
     url.searchParams.set("lab", currentPhase.workload);
     url.searchParams.set("rps", String(targetRps));
+    url.searchParams.set("p95", String(latencySlo));
+    url.searchParams.set("err", String(errorSlo));
+    if (currentPhase.backgroundSlo) {
+      url.searchParams.set("delivery", String(currentPhase.backgroundSlo.minimumDeliveryPercent));
+      url.searchParams.set("lag", String(currentPhase.backgroundSlo.maxLagSeconds));
+    }
   } else {
     url.searchParams.set("phase", String(currentPhaseIndex));
   }
@@ -4281,7 +4419,7 @@ function updateTelemetry() {
   const jitteredLatency = metrics.hasCore && isRunning ? Math.max(1, Math.round(metrics.latency + Math.sin(elapsed * 2.1) * 4)) : 0;
   throughputElement.textContent = `${throughput.toLocaleString("en-US")} r/s`;
   latencyElement.textContent = jitteredLatency > 0 ? `${jitteredLatency} ms` : "—";
-  errorsElement.textContent = `${(isRunning ? metrics.errors : 0).toFixed(1)}%`;
+  errorsElement.textContent = `${formatErrorPercent(isRunning ? metrics.errors : 0, errorSlo)}%`;
   errorsElement.style.color = metrics.errors > 1 && isRunning ? "#d66a78" : "#b8e8f4";
 
   const capacityMet = metrics.hasCore && metrics.capacity >= targetRps;
@@ -4304,7 +4442,7 @@ function updateTelemetry() {
   objectiveThroughputValue.textContent = `${Math.min(metrics.capacity, targetRps).toLocaleString("en-US")} / ${targetRps} r/s`;
   objectiveLatencyValue.textContent = `${metrics.hasCore ? metrics.latency : "—"} / ${latencySlo} ms`;
   objectiveErrorsValue.textContent = isRunning || testPhase === "passed" || testPhase === "failed"
-    ? `${metrics.errors.toFixed(1)} / ${errorSlo.toFixed(1)}%`
+    ? `${formatErrorPercent(metrics.errors, errorSlo)} / ${formatErrorPercent(errorSlo)}%`
     : "Run test";
   if (backgroundTopology && backgroundCorrectness.required) {
     backgroundLabel.textContent = currentPhase.backgroundSlo?.label ?? "Background delivery";
@@ -4782,7 +4920,10 @@ function populateOperationalReview(metrics: ReturnType<typeof calculateMetrics>,
 
 function drillSnapshotStorageKey(phaseIndex = currentPhaseIndex) {
   if (isSandboxMode && phaseIndex === campaignPhases.length) {
-    return `sysbench-drill-snapshot-v1-lab-${currentPhase.workload}-${targetRps}`;
+    const dataContract = currentPhase.backgroundSlo
+      ? `-${currentPhase.backgroundSlo.minimumDeliveryPercent}-${currentPhase.backgroundSlo.maxLagSeconds}`
+      : "-none";
+    return `sysbench-drill-snapshot-v1-lab-${currentPhase.workload}-${targetRps}-${latencySlo}-${errorSlo}${dataContract}`;
   }
   return `sysbench-drill-snapshot-v1-${phaseIndex}`;
 }
@@ -5206,9 +5347,15 @@ phaseList.addEventListener("click", (event) => {
 
 startPhaseButton.addEventListener("click", () => beginCampaignPhase(selectedCampaignPhase));
 openSandboxButton.addEventListener("click", openSandboxSetup);
-closeSandboxButton.addEventListener("click", closeSandboxSetup);
+closeSandboxButton.addEventListener("click", () => {
+  closeSandboxSetup();
+  openSandboxButton.focus();
+});
 sandboxOverlay.addEventListener("click", (event) => {
-  if (event.target === sandboxOverlay) closeSandboxSetup();
+  if (event.target === sandboxOverlay) {
+    closeSandboxSetup();
+    openSandboxButton.focus();
+  }
 });
 sandboxWorkloads.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-workload]");
@@ -5216,13 +5363,24 @@ sandboxWorkloads.addEventListener("click", (event) => {
   const workload = button.dataset.workload as WorkloadKind;
   if (!Object.prototype.hasOwnProperty.call(sandboxPresets, workload)) return;
   sandboxWorkload = workload;
+  sandboxContract = defaultSandboxContract(workload);
   updateSandboxSetupUi();
 });
 sandboxDemandInput.addEventListener("input", () => {
   sandboxTargetRps = Number(sandboxDemandInput.value);
   updateSandboxSetupUi();
 });
-enterSandboxButton.addEventListener("click", () => beginSandboxSession(sandboxWorkload, sandboxTargetRps));
+[sandboxLatencyContract, sandboxErrorContract, sandboxDeliveryContractValue, sandboxLagContractValue]
+  .forEach((input) => input.addEventListener("change", commitSandboxContractInputs));
+resetSandboxContractButton.addEventListener("click", () => {
+  sandboxContract = defaultSandboxContract(sandboxWorkload);
+  updateSandboxSetupUi();
+  showToast(`${sandboxPresets[sandboxWorkload].name} contract restored to its production preset.`);
+});
+enterSandboxButton.addEventListener("click", () => {
+  commitSandboxContractInputs();
+  beginSandboxSession(sandboxWorkload, sandboxTargetRps, sandboxContract);
+});
 dismissBriefingButton.addEventListener("click", dismissPhaseBriefing);
 missionsButton.addEventListener("click", openCampaignScreen);
 configsButton.addEventListener("click", openConfigScreen);
@@ -5427,7 +5585,20 @@ canvas.addEventListener("wheel", (event) => {
 
 window.addEventListener("keydown", (event) => {
   if (sandboxOverlay.dataset.visible === "true") {
-    if (event.key === "Escape") {
+    if (event.key === "Tab") {
+      const focusable = [...sandboxOverlay.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled])")]
+        .filter((element) => element.offsetParent !== null);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && (document.activeElement === first || !sandboxOverlay.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !sandboxOverlay.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    } else if (event.key === "Escape") {
       event.preventDefault();
       closeSandboxSetup();
       openSandboxButton.focus();
@@ -5757,13 +5928,19 @@ function provisionCertifiedSandboxDemo() {
 const searchParams = new URLSearchParams(window.location.search);
 const requestedLab = searchParams.get("lab");
 const requestedLabRps = Number(searchParams.get("rps"));
-const requestedSandbox = requestedLab !== null
-  && Object.prototype.hasOwnProperty.call(sandboxPresets, requestedLab)
+const requestedLabWorkload = requestedLab !== null && Object.prototype.hasOwnProperty.call(sandboxPresets, requestedLab)
+  ? requestedLab as WorkloadKind
+  : null;
+const requestedSandboxContract = requestedLabWorkload
+  ? sandboxContractFromSearch(searchParams, requestedLabWorkload)
+  : null;
+const requestedSandbox = requestedLabWorkload !== null
+  && requestedSandboxContract !== null
   && Number.isFinite(requestedLabRps)
   && requestedLabRps >= 500
   && requestedLabRps <= 10_000;
-if (requestedSandbox) {
-  beginSandboxSession(requestedLab as WorkloadKind, requestedLabRps);
+if (requestedSandbox && requestedLabWorkload && requestedSandboxContract) {
+  beginSandboxSession(requestedLabWorkload, requestedLabRps, requestedSandboxContract);
 }
 const requestedPhase = Number(searchParams.get("phase"));
 if (!requestedSandbox && Number.isInteger(requestedPhase) && requestedPhase >= 0 && requestedPhase < campaignPhases.length) {
@@ -5785,6 +5962,8 @@ const demoMode = searchParams.get("demo");
 if (demoMode !== null) {
   const releaseDemo = demoMode === "release" || demoMode === "release-certified";
   const diagnosisDemo = demoMode === "diagnosis" || demoMode === "diagnosis-solved";
+  const firstReleaseCertificationDemo = demoMode === "certified" && currentPhase.index === 0;
+  const leanReleaseLayout = releaseDemo || firstReleaseCertificationDemo;
   if (!searchParams.has("phase") && !requestedSandbox) {
     setPhaseParameters(releaseDemo ? 0 : 1);
     updateMissionContent();
@@ -5821,12 +6000,12 @@ if (demoMode !== null) {
     showPhaseBriefing();
   } else if (demoMode !== "empty") {
     placeComponent("loadBalancer", { col: 1, row: 3 });
-    if (demoMode !== "failed" && !releaseDemo) placeComponent("loadBalancer", { col: 1, row: 5 });
+    if (demoMode !== "failed" && !leanReleaseLayout) placeComponent("loadBalancer", { col: 1, row: 5 });
     if (demoMode !== "failed") placeComponent("api", { col: 3, row: 2 });
     placeComponent("api", { col: 3, row: 3 });
-    if (demoMode !== "failed" && !releaseDemo) placeComponent("api", { col: 3, row: 4 });
-    if (demoMode !== "failed" && !releaseDemo) placeComponent("api", { col: 3, row: 5 });
-    if (!releaseDemo && (!diagnosisDemo || demoMode === "diagnosis-solved")) placeComponent("redis", { col: 5, row: 2 });
+    if (demoMode !== "failed" && !leanReleaseLayout) placeComponent("api", { col: 3, row: 4 });
+    if (demoMode !== "failed" && !leanReleaseLayout) placeComponent("api", { col: 3, row: 5 });
+    if (!leanReleaseLayout && (!diagnosisDemo || demoMode === "diagnosis-solved")) placeComponent("redis", { col: 5, row: 2 });
     placeComponent("postgres", { col: 7, row: 3 });
     if (diagnosisDemo) placeComponent("postgres", { col: 7, row: 5 });
     const coreCertificationDemo = demoMode === "certified" && currentPhase.workload === "general";
