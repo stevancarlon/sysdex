@@ -485,7 +485,7 @@ test("shared blueprints round-trip compact manual graph tuples", () => {
     v: 1,
     p: 1,
     m: 1,
-    n: [[1, 0, 1, 3], [2, 1, 3, 3], [3, 4, 5, 3]],
+    n: [[1, 0, 1, 3], [2, 1, 3, 3, 1], [3, 4, 5, 3]],
     e: [[1, 2, 0], [2, 3, 2, "ASYNC EVENT · NON-BLOCKING"]],
     c: [0],
   };

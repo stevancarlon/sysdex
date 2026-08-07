@@ -107,7 +107,7 @@ type SavedBlueprintV1 = {
   phaseIndex: number;
   savedAt: number;
   topologyMode: "automatic" | "manual";
-  nodes: Array<{ id: number; kind: ComponentKind; grid: GridPosition }>;
+  nodes: Array<{ id: number; kind: ComponentKind; grid: GridPosition; state?: "healthy" | "failed" }>;
   connections: Array<{ fromId: number; toId: number; mode: SimulationEdgeMode; label: string | null }>;
   configs: ConfigId[];
 };
@@ -453,7 +453,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <label id="sandbox-lag-contract" hidden><small>Freshness lag</small><span><input id="sandbox-lag-contract-value" type="number" min="0.1" max="30" step="0.1" value="1" aria-label="Maximum background delivery lag in seconds" /><b>s</b></span></label>
         </div>
         <div class="sandbox-footer">
-          <p><b>Unlimited lab budget.</b> Save variants, trace paths, and share any valid graph.</p>
+          <p><b>Unlimited lab budget.</b> Save variants, trace paths, inject machine failures, and share any valid graph.</p>
           <button id="enter-sandbox-button" type="button">Enter Free Lab →</button>
         </div>
       </section>
@@ -596,7 +596,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <span><small>System effect</small><b id="selected-effect">—</b></span>
         <span><small>Runtime state</small><b id="selected-state">Healthy</b></span>
       </div>
-      <button class="scrap-button" id="scrap-button" type="button">Remove · full refund</button>
+      <div class="selected-actions">
+        <button class="chaos-button" id="chaos-button" type="button" hidden aria-pressed="false">Take offline</button>
+        <button class="scrap-button" id="scrap-button" type="button">Remove · full refund</button>
+      </div>
     </aside>
 
     <section class="parts-panel" aria-labelledby="parts-title">
@@ -811,6 +814,7 @@ const selectedDescription = document.querySelector<HTMLElement>("#selected-descr
 const selectedCapacity = document.querySelector<HTMLElement>("#selected-capacity")!;
 const selectedEffect = document.querySelector<HTMLElement>("#selected-effect")!;
 const selectedState = document.querySelector<HTMLElement>("#selected-state")!;
+const chaosButton = document.querySelector<HTMLButtonElement>("#chaos-button")!;
 const scrapButton = document.querySelector<HTMLButtonElement>("#scrap-button")!;
 const missionLabelElement = document.querySelector<HTMLElement>("#mission-label")!;
 const missionTitleElement = document.querySelector<HTMLElement>("#mission-title")!;
@@ -2682,6 +2686,7 @@ function selectNode(node: PlacedComponent | null) {
   selectedNode = node;
   if (!node) {
     selectedCard.dataset.visible = "false";
+    chaosButton.hidden = true;
     return;
   }
   const definition = componentDefinitions[node.kind];
@@ -2698,7 +2703,25 @@ function selectNode(node: PlacedComponent | null) {
     : definition.effectText;
   selectedState.textContent = node.state === "healthy" ? "Healthy" : node.state === "degraded" ? "Recovering" : "Failed";
   selectedState.dataset.state = node.state;
+  chaosButton.hidden = !isSandboxMode;
+  chaosButton.dataset.offline = String(node.state === "failed");
+  chaosButton.setAttribute("aria-pressed", String(node.state === "failed"));
+  chaosButton.textContent = node.state === "failed" ? "Restore machine" : "Take offline";
   selectedCard.dataset.visible = "true";
+}
+
+function toggleSandboxNodeFailure() {
+  if (!isSandboxMode || !selectedNode) return;
+  const node = selectedNode;
+  const takingOffline = node.state !== "failed";
+  node.state = takingOffline ? "failed" : "healthy";
+  rebuildConnections();
+  selectNode(node);
+  updateUi();
+  updateTelemetry();
+  showToast(takingOffline
+    ? `${contextualComponentLabel(node.kind)} taken offline. The live graph will reroute wherever redundancy allows.`
+    : `${contextualComponentLabel(node.kind)} restored. Capacity and routes are available again.`);
 }
 
 function updateMachineAnimations(delta: number) {
@@ -2882,7 +2905,9 @@ function validateBlueprintCandidate(value: unknown): SavedBlueprintV1 | null {
     && node.grid!.col >= 0
     && node.grid!.col < columns
     && node.grid!.row >= 0
-    && node.grid!.row < rows);
+    && node.grid!.row < rows
+    && (node.state === undefined || node.state === "healthy" || node.state === "failed")
+    && (isSandboxMode || node.state !== "failed"));
   if (!validNodes) return null;
   const occupiedTiles = new Set(candidate.nodes.map((node) => `${node.grid.col}:${node.grid.row}`));
   const savedNodeIds = new Set(candidate.nodes.map((node) => node.id));
@@ -2942,7 +2967,12 @@ function createCurrentBlueprint(): SavedBlueprintV1 {
     phaseIndex: currentPhaseIndex,
     savedAt: Date.now(),
     topologyMode,
-    nodes: nodes.map((node) => ({ id: node.id, kind: node.kind, grid: { ...node.grid } })),
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      grid: { ...node.grid },
+      state: node.state === "failed" ? "failed" : undefined,
+    })),
     connections: topologyMode === "manual"
       ? authoredConnections.map((connection) => ({
         fromId: connection.fromId,
@@ -2989,7 +3019,8 @@ function saveBlueprint() {
     saveBlueprintButton.textContent = "Save design";
   }, 1100);
   syncBlueprintUi();
-  showToast(`${currentPhase.service} blueprint saved locally. Keep experimenting—Restore saved will bring this graph back.`);
+  const offlineCount = blueprint.nodes.filter((node) => node.state === "failed").length;
+  showToast(`${currentPhase.service} blueprint saved locally${offlineCount > 0 ? ` with ${offlineCount} offline machine${offlineCount === 1 ? "" : "s"}` : ""}. Restore saved will bring this exact graph back.`);
 }
 
 function compactSharedBlueprint(blueprint: SavedBlueprintV1): SharedBlueprintV1 {
@@ -2997,7 +3028,9 @@ function compactSharedBlueprint(blueprint: SavedBlueprintV1): SharedBlueprintV1 
     v: 1,
     p: blueprint.phaseIndex,
     m: blueprint.topologyMode === "manual" ? 1 : 0,
-    n: blueprint.nodes.map((node) => [node.id, componentOrder.indexOf(node.kind), node.grid.col, node.grid.row]),
+    n: blueprint.nodes.map((node) => node.state === "failed"
+      ? [node.id, componentOrder.indexOf(node.kind), node.grid.col, node.grid.row, 1]
+      : [node.id, componentOrder.indexOf(node.kind), node.grid.col, node.grid.row]),
     e: blueprint.connections.map((connection) => {
       const tuple: [number, number, number, string?] = [
         connection.fromId,
@@ -3020,8 +3053,9 @@ function readSharedBlueprint(encoded: string): SavedBlueprintV1 | null {
     || !Array.isArray(candidate.e) || candidate.e.length > 160
     || !Array.isArray(candidate.c) || candidate.c.length > configDefinitions.length) return null;
   const validNodeTuples = candidate.n.every((tuple) => Array.isArray(tuple)
-    && tuple.length === 4
+    && (tuple.length === 4 || tuple.length === 5)
     && tuple.every(Number.isInteger)
+    && (tuple.length === 4 || tuple[4] === 1)
     && componentOrder[tuple[1]] !== undefined);
   const validEdgeTuples = candidate.e.every((tuple) => Array.isArray(tuple)
     && (tuple.length === 3 || tuple.length === 4)
@@ -3038,7 +3072,12 @@ function readSharedBlueprint(encoded: string): SavedBlueprintV1 | null {
     phaseIndex: candidate.p,
     savedAt: Date.now(),
     topologyMode: candidate.m === 1 ? "manual" : "automatic",
-    nodes: candidate.n.map(([id, kindIndex, col, row]) => ({ id, kind: componentOrder[kindIndex], grid: { col, row } })),
+    nodes: candidate.n.map(([id, kindIndex, col, row, offline]) => ({
+      id,
+      kind: componentOrder[kindIndex],
+      grid: { col, row },
+      state: offline === 1 ? "failed" : undefined,
+    })),
     connections: candidate.e.map(([fromId, toId, modeIndex, label]) => ({
       fromId,
       toId,
@@ -3111,7 +3150,8 @@ async function shareBlueprint() {
     shareBlueprintButton.dataset.saved = "false";
     shareBlueprintButton.textContent = "Share link";
   }, 1200);
-  showToast(`Share link copied: ${nodes.length} machines${topologyMode === "manual" ? ` and ${authoredConnections.length} authored cables` : " with automatic routing"}.`);
+  const offlineCount = blueprint.nodes.filter((node) => node.state === "failed").length;
+  showToast(`Share link copied: ${nodes.length} machines${topologyMode === "manual" ? ` and ${authoredConnections.length} authored cables` : " with automatic routing"}${offlineCount > 0 ? ` · ${offlineCount} offline` : ""}.`);
 }
 
 function restoreBlueprintData(blueprint: SavedBlueprintV1, source: "saved" | "shared") {
@@ -3127,7 +3167,10 @@ function restoreBlueprintData(blueprint: SavedBlueprintV1, source: "saved" | "sh
   for (const savedNode of blueprint.nodes) {
     if (!placeComponent(savedNode.kind, savedNode.grid, true)) continue;
     const restoredNode = nodes.at(-1);
-    if (restoredNode) restoredIds.set(savedNode.id, restoredNode.id);
+    if (restoredNode) {
+      restoredNode.state = savedNode.state === "failed" ? "failed" : "healthy";
+      restoredIds.set(savedNode.id, restoredNode.id);
+    }
   }
 
   if (blueprint.topologyMode === "manual") {
@@ -3145,8 +3188,8 @@ function restoreBlueprintData(blueprint: SavedBlueprintV1, source: "saved" | "sh
         label: savedConnection.label,
       });
     }
-    rebuildConnections();
   }
+  rebuildConnections();
   wiringEditing = false;
   wiringSource = null;
   canvas.dataset.mode = "idle";
@@ -3154,7 +3197,8 @@ function restoreBlueprintData(blueprint: SavedBlueprintV1, source: "saved" | "sh
   syncWiringUi();
   updateUi();
   updateTelemetry();
-  showToast(`${source === "shared" ? "Shared" : currentPhase.service} blueprint restored: ${nodes.length} machines, ${activeConfigs.size} runbook policies, ${topologyMode === "manual" ? `${authoredConnections.length} authored cables` : "automatic routing"}.`);
+  const offlineCount = nodes.filter((node) => node.state === "failed").length;
+  showToast(`${source === "shared" ? "Shared" : currentPhase.service} blueprint restored: ${nodes.length} machines, ${activeConfigs.size} runbook policies, ${topologyMode === "manual" ? `${authoredConnections.length} authored cables` : "automatic routing"}${offlineCount > 0 ? `, ${offlineCount} offline` : ""}.`);
 }
 
 function restoreBlueprint() {
@@ -3353,7 +3397,7 @@ function rebuildConnections() {
       const from = nodes.find((node) => node.id === authored.fromId);
       const to = nodes.find((node) => node.id === authored.toId);
       const rendered = connect(from, to, authored.label, authored.mode, authored.id);
-      if (rendered) trafficRoutes.push([rendered]);
+      if (rendered && from?.state !== "failed" && to?.state !== "failed") trafficRoutes.push([rendered]);
     }
     return;
   }
@@ -3697,7 +3741,9 @@ function syncWiringUi() {
   } else if (topologyMode === "automatic") {
     wiringButtonLabel.textContent = "Take cable control";
     shortcut.textContent = "W · Auto-routed";
-    partsHint.innerHTML = "<b>Place machines anywhere on the floor.</b> Auto-route connects compatible tiers; press W to take cable control.";
+    partsHint.innerHTML = isSandboxMode
+      ? "<b>Craft freely while traffic runs.</b> Select an installed machine to take it offline, or press W to author cables."
+      : "<b>Place machines anywhere on the floor.</b> Auto-route connects compatible tiers; press W to take cable control.";
   } else if (wiringEditing) {
     wiringButtonLabel.textContent = "Finish wiring";
     shortcut.textContent = "W · Editing live";
@@ -3705,7 +3751,9 @@ function syncWiringUi() {
   } else {
     wiringButtonLabel.textContent = "Edit cables";
     shortcut.textContent = "W · Manual graph";
-    partsHint.innerHTML = "<b>Your manual topology is preserved.</b> Press W to edit cables, or restore automatic routing from the wiring guide.";
+    partsHint.innerHTML = isSandboxMode
+      ? "<b>Your manual topology is live.</b> Select a machine to inject a failure, press W to edit cables, or restore auto-routing."
+      : "<b>Your manual topology is preserved.</b> Press W to edit cables, or restore automatic routing from the wiring guide.";
   }
   if (wiringSource) {
     wiringGuideStep.textContent = `Source · ${contextualComponentLabel(wiringSource.kind)}`;
@@ -4191,7 +4239,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
       stage = "Free Lab · Live workload";
       title = healthy ? "Every selected contract is green" : "Observe the limiting contract";
       description = healthy
-        ? "Keep it running, trace paths, or stop the workload and change the graph. Nothing is locked into a canonical solution."
+        ? "Keep it running, trace paths, or select any machine and take it offline. Nothing is locked into a canonical solution."
         : metrics.diagnosis;
       state = healthy ? "ready" : "live";
     } else if (!metrics.hasCore) {
@@ -4209,7 +4257,7 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
     } else {
       stage = "Free Lab · Ready";
       title = "Start the workload or keep crafting";
-      description = "Run continuously, inspect paths, save variants, and share any topology you invent.";
+      description = "Run continuously, inspect paths, inject failures, save variants, and share any topology you invent.";
       state = "ready";
     }
   } else if (currentPhaseIndex > 0) {
@@ -4355,12 +4403,14 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
   if (isSandboxMode) {
     const contractReady = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
     const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo && contractReady;
-    runButton.disabled = !metrics.hasCore;
+    runButton.disabled = nodes.length === 0;
     runButton.dataset.ready = String(!isRunning && previewReady);
     runButton.textContent = isRunning
       ? "Stop lab workload · T"
-      : !metrics.hasCore
-        ? "Complete request path first"
+      : nodes.length === 0
+        ? "Place any machine first"
+        : !metrics.hasCore
+          ? "Run broken graph · T"
         : previewReady
           ? "Start lab workload · T"
           : "Run current experiment · T";
@@ -4540,7 +4590,9 @@ function resetIncident() {
   incidentTask.hidden = true;
   incidentTask.dataset.complete = "false";
   missionCard.dataset.incident = "false";
-  for (const node of nodes) node.state = "healthy";
+  if (!isSandboxMode) {
+    for (const node of nodes) node.state = "healthy";
+  }
 }
 
 function topologyFingerprint() {
@@ -5097,10 +5149,12 @@ function startTest() {
   hideResult();
   resetIncident();
   const topology = calculateMetrics(targetRps);
-  if (!topology.hasCore) {
+  if ((!isSandboxMode && !topology.hasCore) || (isSandboxMode && nodes.length === 0)) {
     testPhase = "idle";
     updateTelemetry();
-    showToast(`${topology.diagnosis} Install the highlighted machine before generating traffic.`);
+    showToast(isSandboxMode
+      ? "Place at least one machine before starting a lab workload. Broken and incomplete graphs are allowed after that."
+      : `${topology.diagnosis} Install the highlighted machine before generating traffic.`);
     return;
   }
   isRunning = true;
@@ -5125,7 +5179,9 @@ function stopTest(silent = false) {
   currentDemand = 0;
   resetIncident();
   syncTestControls();
-  if (!silent) showToast("Traffic test aborted. Topology returned to build mode.");
+  if (!silent) showToast(isSandboxMode
+    ? "Lab workload stopped. Injected failures stay in place so you can save, share, or keep editing the scenario."
+    : "Traffic test aborted. Topology returned to build mode.");
 }
 
 function updateTest(delta: number) {
@@ -5693,6 +5749,7 @@ window.addEventListener("keydown", (event) => {
 scrapButton.addEventListener("click", () => {
   if (selectedNode) removeNode(selectedNode);
 });
+chaosButton.addEventListener("click", toggleSandboxNodeFailure);
 
 rotateLeftButton.addEventListener("click", () => rotateView(-1));
 rotateRightButton.addEventListener("click", () => rotateView(1));
@@ -5971,12 +6028,26 @@ if (demoMode !== null) {
     updateTelemetry();
   }
   closeCampaignScreen();
-  if (demoMode === "sandbox-certified" && requestedSandbox) {
+  if ((demoMode === "sandbox-certified" || demoMode === "sandbox-failure") && requestedSandbox) {
     provisionCertifiedSandboxDemo();
     updateUi();
     updateTelemetry();
     runButton.click();
     for (let second = 0; second < 12; second += 1) updateTest(1);
+    if (demoMode === "sandbox-failure") {
+      const failureKind: ComponentKind = currentPhase.workload === "streaming"
+        ? "cdn"
+        : currentPhase.workload === "matching" || currentPhase.workload === "dispatch"
+          ? "geoIndex"
+          : currentPhase.workload === "analytics"
+            ? "queue"
+            : "postgres";
+      const target = nodes.find((node) => node.kind === failureKind);
+      if (target) {
+        selectNode(target);
+        toggleSandboxNodeFailure();
+      }
+    }
     updateTelemetry();
   } else if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-backlog" || demoMode === "analytics-manual" || demoMode === "analytics-manual-cut" || demoMode === "analytics-failed") {
     loadInheritedScenario(1);

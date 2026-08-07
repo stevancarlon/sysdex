@@ -1495,10 +1495,19 @@ button,
   line-height: 1.25;
 }
 
-.scrap-button {
+.selected-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.selected-actions button[hidden] { display: none; }
+
+.scrap-button,
+.chaos-button {
   width: 100%;
   min-height: 40px;
-  margin-top: 11px;
   border: 0;
   border-radius: 7px;
   color: #77d8ee;
@@ -1517,14 +1526,21 @@ button,
   transition-timing-function: ease-out;
 }
 
-.scrap-button:hover {
+.scrap-button:hover,
+.chaos-button:hover {
   background: #28475e;
   box-shadow:
     0 0 0 1px rgba(105, 216, 235, 0.36),
     0 3px 7px rgba(2, 14, 25, 0.24);
 }
 
-.scrap-button:active {
+.chaos-button { color: #ef9ca8; background: rgba(59, 25, 43, .72); box-shadow: 0 0 0 1px rgba(229, 110, 132, .25), inset 0 -2px 0 rgba(18, 5, 13, .3); }
+.chaos-button:hover { background: #593148; box-shadow: 0 0 0 1px rgba(239, 135, 152, .45), 0 3px 7px rgba(22, 5, 14, .3); }
+.chaos-button[data-offline="true"] { color: #8de3ce; background: rgba(20, 57, 54, .72); box-shadow: 0 0 0 1px rgba(91, 218, 191, .28), inset 0 -2px 0 rgba(4, 20, 18, .3); }
+.chaos-button[data-offline="true"]:hover { background: #285c57; box-shadow: 0 0 0 1px rgba(115, 231, 207, .46), 0 3px 7px rgba(4, 20, 18, .3); }
+
+.scrap-button:active,
+.chaos-button:active {
   scale: 0.96;
 }
 
@@ -3156,7 +3172,7 @@ button,
 
   .selected-card {
     top: 140px;
-    left: 330px;
+    left: 410px;
   }
 
   .phase-briefing-card {

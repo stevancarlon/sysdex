@@ -1,6 +1,6 @@
 # Sysdex
 
-A browser-based systems engineering campaign. Build production topologies in a tactile retro-isometric lab, configure resilience policies, prove service-level objectives, and operate the system through live failure drills.
+A browser-based systems engineering campaign and creative sandbox. Build production topologies in a cool-toned pixelated 2.5D lab, author directed data paths, configure resilience policies, prove service-level objectives, and operate the system through live failure drills.
 
 The long-term mechanics direction is documented in [GAME_DESIGN.md](./GAME_DESIGN.md): a composable graph simulation where scenarios define contracts rather than hidden component recipes.
 
@@ -28,17 +28,26 @@ Eight phases escalate from a first URL-shortener release to product-scale archit
 
 Successful certification unlocks the next operation and persists the best score locally. Later phases unlock runbook configurations including tracing and SLO alerts, API autoscaling, circuit breakers, read replicas, WAL tuning, and Multi-AZ failover.
 
+## Free Lab
+
+Creative mode removes campaign progression and prescribed incidents. Choose any of five workload families, set 500–10,000 requests per second, and author the p95, error, delivery, and freshness contracts yourself. Every machine and runbook is unlocked, budget is unlimited, and traffic runs until you stop it.
+
+Select any installed machine to take it offline or restore it while traffic is live. Broken and incomplete graphs remain runnable, so you can observe total outages, partial degradation, synchronous fallbacks, stale data, and successful failover. Custom contracts, manual cables, runbooks, and offline machines survive local saves and compact share links.
+
 ## Gameplay
 
 - Drag nine machine types onto the grid: Load Balancer, API Server, Redis, PostgreSQL, Message Queue, Worker Pool, Geo Index, Object Storage, and CDN Edge.
 - Use `1`–`9` to pick machines without leaving the laboratory view, then click a highlighted floor tile to install them.
 - Rearrange placed machines by dragging them between tiles.
 - Select a machine to learn how its physical metaphor maps to the software component.
+- Press `W` after the tutorial to switch from automatic routing to compatible, directed player-authored cables.
+- Press `R` to trace each blocking request, asynchronous event, and playback path through the graph.
 - Start or abort a production drill with the control-desk button or `T`, then watch requests travel through automatically routed data cables.
 - Tune throughput, p95 latency, and errors against each phase's service-level objectives.
-- Respond to incidents by changing the live topology: add the affected replica, cache node, geographic partition, or CDN edge while traffic is running. The drill supplies an emergency budget equal to the required machine cost.
+- Respond to incidents by changing the live topology while traffic is running. Existing redundancy, rerouting, scaling, caching, or a relevant runbook can all be valid when they restore the declared contracts.
 - Configure resilience policies before the drill to make matching incidents recover automatically; runbook choices are operational behavior, not buttons pressed after failure.
 - Observe failed and recovering machines in the scene, labels, live capacity, latency, errors, and bottleneck diagnosis.
+- Save reversible phase-local blueprints, compare consecutive drills, and copy validated share links for automatic or manual designs.
 - Remove selected machines for a full refund using the component card or `Delete`.
 - Rotate the isometric laboratory by left-dragging empty floor space. Right-drag, middle-drag, `Q` / `E`, and the on-screen controls remain available as alternatives.
 - Watch each machine react to traffic: the Load Balancer scans, API beacons pulse, Redis memory lights sequence, PostgreSQL disks spin, Queue conveyors accelerate, Worker fans turn, Geo cells ripple, and CDN signals broadcast.
@@ -55,6 +64,10 @@ Use `?demo=analytics-inherited`, `?demo=analytics-failed`,
 `?demo=analytics-queue`, or `?demo=analytics-scale` to compare the Phase 2
 bottleneck, its diagnostic result, and two valid designs.
 Add `&angle=1.8` to render a deterministic rotated camera angle.
+Use `?lab=dispatch&rps=3000&demo=sandbox-certified` for a deterministic Free
+Lab workload, or replace the demo with `sandbox-failure` to render a selected
+offline machine. Shared sandbox URLs also carry `p95`, `err`, `delivery`, and
+`lag` contract parameters.
 
 ## Design references
 

@@ -2,7 +2,10 @@ export type SharedBlueprintV1 = {
   v: 1;
   p: number;
   m: 0 | 1;
-  n: Array<[id: number, kindIndex: number, col: number, row: number]>;
+  n: Array<
+    | [id: number, kindIndex: number, col: number, row: number]
+    | [id: number, kindIndex: number, col: number, row: number, offline: 1]
+  >;
   e: Array<[fromId: number, toId: number, modeIndex: number, label?: string]>;
   c: number[];
 };
