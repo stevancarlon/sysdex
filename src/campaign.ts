@@ -32,7 +32,7 @@ export type CampaignPhase = {
   index: number;
   name: string;
   service: string;
-  difficulty: "Apprentice" | "Operator" | "On-call" | "Senior" | "Staff";
+  difficulty: "Apprentice" | "Operator" | "On-call" | "Senior" | "Staff" | "Sandbox";
   workload: WorkloadKind;
   objective: string;
   description: string;

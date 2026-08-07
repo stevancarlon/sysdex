@@ -2459,6 +2459,7 @@ button,
 .briefing-button i { margin-left: 4px; font-style: normal; }
 
 .start-overlay,
+.sandbox-overlay,
 .config-overlay {
   position: absolute;
   inset: 0;
@@ -2478,6 +2479,7 @@ button,
 }
 
 .start-overlay[data-visible="true"],
+.sandbox-overlay[data-visible="true"],
 .config-overlay[data-visible="true"] {
   opacity: 1;
   pointer-events: auto;
@@ -2746,6 +2748,108 @@ button,
 .start-button span { font-size: 10px; }
 .start-button b { font: 900 10px "Courier New", monospace; letter-spacing: 0.06em; text-transform: uppercase; }
 
+.sandbox-launch-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 54px;
+  margin: 0 0 12px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 11px;
+  color: #d9edf0;
+  background: linear-gradient(135deg, rgba(34, 57, 78, .94), rgba(34, 42, 67, .96));
+  box-shadow: inset 0 -3px 0 rgba(5, 12, 25, .35), 0 0 0 1px rgba(148, 175, 222, .2);
+  text-align: left;
+  cursor: pointer;
+  transition: scale 150ms ease-out, background-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+.sandbox-launch-button:hover { background: #334b68; box-shadow: inset 0 -3px 0 rgba(5, 12, 25, .35), 0 0 0 1px rgba(135, 220, 230, .42); }
+.sandbox-launch-button:active { scale: .97; }
+.sandbox-launch-button span small,
+.sandbox-launch-button span strong { display: block; }
+.sandbox-launch-button span small { color: #8d9ed2; font: 900 8px "Courier New", monospace; letter-spacing: .09em; text-transform: uppercase; }
+.sandbox-launch-button span strong { margin-top: 2px; font: 800 14px var(--font-ui); }
+.sandbox-launch-button > b { color: #9edfe7; font: 900 9px "Courier New", monospace; letter-spacing: .05em; text-transform: uppercase; }
+
+.sandbox-overlay { z-index: 22; }
+
+.sandbox-card {
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 25px;
+  overflow: auto;
+  border-radius: 22px;
+  color: var(--ink);
+  background: linear-gradient(145deg, rgba(47, 56, 75, .995), rgba(14, 21, 34, .995));
+  box-shadow: 0 0 0 1px rgba(160, 211, 225, .2), 0 28px 80px rgba(0, 7, 14, .65), inset 0 -6px 0 rgba(3, 10, 19, .42);
+  opacity: 0;
+  translate: 0 10px;
+  transition: opacity 170ms ease-in, translate 170ms ease-in;
+}
+
+.sandbox-overlay[data-visible="true"] .sandbox-card { opacity: 1; translate: 0 0; transition-duration: 280ms; transition-timing-function: cubic-bezier(.2, 0, 0, 1); }
+
+.sandbox-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 22px; }
+.sandbox-heading h2 { margin: 2px 0 0; font: 800 27px var(--font-ui); }
+.sandbox-heading p:last-child { max-width: 600px; margin: 7px 0 0; color: #a9bec5; font-size: 12px; line-height: 1.45; text-wrap: pretty; }
+.sandbox-heading > button { width: 34px; height: 34px; flex: 0 0 auto; border: 0; border-radius: 8px; color: #a9c7ce; background: #183044; font-size: 20px; cursor: pointer; }
+
+.sandbox-workloads {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 19px;
+}
+
+.sandbox-workloads button {
+  min-width: 0;
+  min-height: 62px;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 10px;
+  color: #a8bec5;
+  background: rgba(5, 18, 30, .72);
+  box-shadow: inset 0 0 0 1px rgba(195, 225, 235, .1), inset 0 -3px 0 rgba(1, 8, 15, .28);
+  cursor: pointer;
+  transition: scale 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out;
+}
+
+.sandbox-workloads button:hover,
+.sandbox-workloads button[aria-checked="true"] { color: #e2f3f5; background: #27465c; box-shadow: inset 0 0 0 1px rgba(105, 220, 234, .45), inset 0 -3px 0 rgba(2, 11, 20, .3); }
+.sandbox-workloads button:active { scale: .96; }
+.sandbox-workloads span,
+.sandbox-workloads small { display: block; }
+.sandbox-workloads span { font: 800 12px var(--font-ui); }
+.sandbox-workloads small { margin-top: 4px; color: #8199a3; font: 900 7px/1.3 "Courier New", monospace; text-transform: uppercase; }
+
+.sandbox-demand {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: rgba(5, 18, 30, .68);
+  box-shadow: inset 0 0 0 1px rgba(195, 225, 235, .1);
+}
+.sandbox-demand > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sandbox-demand span { color: #83a0aa; font: 900 9px "Courier New", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.sandbox-demand strong { color: #8be2e6; font: 900 13px "Courier New", monospace; font-variant-numeric: tabular-nums; }
+.sandbox-demand input { width: 100%; margin-top: 10px; accent-color: #69d8eb; cursor: ew-resize; }
+
+.sandbox-contracts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
+.sandbox-contracts span { min-width: 0; padding: 10px 11px; border-radius: 9px; background: rgba(21, 45, 61, .72); box-shadow: inset 0 0 0 1px rgba(105, 216, 235, .11); }
+.sandbox-contracts span[hidden] { display: none; }
+.sandbox-contracts small,
+.sandbox-contracts strong { display: block; font-family: "Courier New", monospace; }
+.sandbox-contracts small { color: #819aa4; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.sandbox-contracts strong { margin-top: 4px; color: #d9ebee; font-size: 11px; }
+
+.sandbox-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 15px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .09); }
+.sandbox-footer p { margin: 0; color: #91a9b2; font-size: 10px; line-height: 1.4; }
+.sandbox-footer p b { color: #c9dbe0; }
+.sandbox-footer button { min-height: 44px; padding: 0 18px 3px; border: 0; border-radius: 9px; color: #071b29; background: #69d8eb; box-shadow: inset 0 -3px 0 #2c87a5; font: 900 10px "Courier New", monospace; text-transform: uppercase; cursor: pointer; }
+
 .campaign-dock {
   position: absolute;
   top: 20px;
@@ -2789,6 +2893,7 @@ button,
 .phase-pips i { width: 7px; height: 7px; border-radius: 50%; background: #314b5b; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.26); }
 .phase-pips i[data-complete="true"] { background: #3d96ad; }
 .phase-pips i[data-current="true"] { background: #6de1eb; box-shadow: 0 0 8px rgba(93, 218, 233, 0.8); }
+.phase-pips > b { color: #a9b8e6; font: 900 7px "Courier New", monospace; letter-spacing: .08em; white-space: nowrap; }
 
 .config-overlay { z-index: 16; }
 

@@ -9,6 +9,7 @@ import {
   type CampaignPhase,
   type ComponentKind,
   type ConfigId,
+  type WorkloadKind,
 } from "./campaign";
 import { type SimulationEdgeMode, type SimulationGraph } from "./simulation/graph.ts";
 import { coreComponentCapacity, evaluateCoreServiceGraph } from "./simulation/coreService.ts";
@@ -225,9 +226,108 @@ const componentOrder: ComponentKind[] = [
   "cdn",
 ];
 const blueprintConnectionModes: SimulationEdgeMode[] = ["request", "cache", "enqueue", "consume", "commit", "replicate"];
+const sandboxPresets: Record<WorkloadKind, {
+  name: string;
+  service: string;
+  objective: string;
+  description: string;
+  lesson: string;
+  latencySlo: number;
+  errorSlo: number;
+  backgroundSlo?: CampaignPhase["backgroundSlo"];
+}> = {
+  general: {
+    name: "Core API",
+    service: "API Platform",
+    objective: "Author any durable request topology.",
+    description: "Explore ingress, compute, cache, storage, replication, and cost without a scripted failure.",
+    lesson: "Change one boundary at a time and compare measured behavior.",
+    latencySlo: 95,
+    errorSlo: 0.5,
+  },
+  analytics: {
+    name: "Event Pipeline",
+    service: "Event Platform",
+    objective: "Design a request path and an event-delivery path.",
+    description: "Explore synchronous calls, queues, consumers, backlog, and data freshness.",
+    lesson: "User latency and event delivery are separate contracts.",
+    latencySlo: 115,
+    errorSlo: 1,
+    backgroundSlo: { label: "Product events", maxLagSeconds: 1, minimumDeliveryPercent: 99.5 },
+  },
+  matching: {
+    name: "Nearby Search",
+    service: "Geo Search",
+    objective: "Build any bounded geographic query topology.",
+    description: "Explore geo partitions, cache placement, durable profiles, and hotspot headroom.",
+    lesson: "Only geographic indexes on a complete query path contribute.",
+    latencySlo: 70,
+    errorSlo: 0.2,
+  },
+  streaming: {
+    name: "Media Delivery",
+    service: "Media Platform",
+    objective: "Balance metadata, playback, and transcode contracts.",
+    description: "Explore origin protection, object storage, edge delivery, and asynchronous media jobs.",
+    lesson: "Healthy metadata cannot conceal a broken playback or transcode path.",
+    latencySlo: 60,
+    errorSlo: 0.15,
+    backgroundSlo: { label: "Transcode jobs", maxLagSeconds: 1.2, minimumDeliveryPercent: 99.5 },
+  },
+  dispatch: {
+    name: "Live Dispatch",
+    service: "Dispatch Platform",
+    objective: "Combine nearby queries with live location delivery.",
+    description: "Explore geographic partitions, fast reads, queues, and location freshness under arbitrary load.",
+    lesson: "A fast match based on stale locations is still wrong.",
+    latencySlo: 50,
+    errorSlo: 0.1,
+    backgroundSlo: { label: "Driver locations", maxLagSeconds: 1, minimumDeliveryPercent: 99.8 },
+  },
+};
+
+function createSandboxPhase(workload: WorkloadKind, demand: number): CampaignPhase {
+  const preset = sandboxPresets[workload];
+  return {
+    index: campaignPhases.length,
+    name: `Free Lab · ${preset.name}`,
+    service: preset.service,
+    difficulty: "Sandbox",
+    workload,
+    objective: preset.objective,
+    description: preset.description,
+    lesson: preset.lesson,
+    targetRps: demand,
+    latencySlo: preset.latencySlo,
+    errorSlo: preset.errorSlo,
+    backgroundSlo: preset.backgroundSlo,
+    budget: 99_999,
+    certificationSeconds: 5,
+    testTimeLimit: Number.POSITIVE_INFINITY,
+    unlocks: [...componentOrder],
+    configUnlocks: configDefinitions.map((config) => config.id),
+    incident: {
+      code: "LAB-000",
+      title: "No scripted incident",
+      summary: "Free Lab runs only the workload and topology you choose.",
+      operatorPrompt: "Keep experimenting.",
+      manualAction: "Continue observation",
+      affectedKind: null,
+      triggerAt: Number.POSITIVE_INFINITY,
+      loadMultiplier: 1,
+      capacityMultiplier: 1,
+      latencyPenalty: 0,
+      errorPenalty: 0,
+      recoverySeconds: 0,
+    },
+  };
+}
 const brandPreviewData = new Map<ComponentKind, string>();
 let currentPhaseIndex = 0;
 let currentPhase: CampaignPhase = campaignPhases[currentPhaseIndex];
+let isSandboxMode = false;
+let sandboxWorkload: WorkloadKind = "general";
+let sandboxTargetRps = 3_000;
 let totalBudget = currentPhase.budget;
 let targetRps = currentPhase.targetRps;
 let latencySlo = currentPhase.latencySlo;
@@ -278,11 +378,43 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             </div>
               <span id="campaign-progress">1 / 8 unlocked</span>
           </div>
+          <button class="sandbox-launch-button" id="open-sandbox-button" type="button">
+            <span><small>Creative mode</small><strong>Free Lab</strong></span><b>Choose workload + traffic →</b>
+          </button>
           <div class="phase-list" id="phase-list"></div>
           <div class="phase-brief" id="phase-brief"></div>
           <button class="start-button" id="start-phase-button" type="button">
             <span>Enter operations lab</span><b>Start phase 01 →</b>
           </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="sandbox-overlay" id="sandbox-overlay" data-visible="false" aria-hidden="true">
+      <section class="sandbox-card" role="dialog" aria-modal="true" aria-labelledby="sandbox-title">
+        <div class="sandbox-heading">
+          <div><p class="panel-kicker">Creative mode</p><h2 id="sandbox-title">Open a Free Lab</h2><p>Choose the system contract. Every machine and runbook is available; no scripted incident or campaign solution exists.</p></div>
+          <button id="close-sandbox-button" type="button" aria-label="Close Free Lab setup">×</button>
+        </div>
+        <div class="sandbox-workloads" id="sandbox-workloads" role="radiogroup" aria-label="Sandbox workload">
+          <button type="button" role="radio" data-workload="general" aria-checked="true"><span>Core API</span><small>Request + storage</small></button>
+          <button type="button" role="radio" data-workload="analytics" aria-checked="false"><span>Events</span><small>Request + delivery</small></button>
+          <button type="button" role="radio" data-workload="matching" aria-checked="false"><span>Nearby</span><small>Geo queries</small></button>
+          <button type="button" role="radio" data-workload="streaming" aria-checked="false"><span>Media</span><small>Metadata + playback</small></button>
+          <button type="button" role="radio" data-workload="dispatch" aria-checked="false"><span>Dispatch</span><small>Geo + locations</small></button>
+        </div>
+        <div class="sandbox-demand">
+          <div><span>Traffic contract</span><strong id="sandbox-demand-value">3,000 r/s</strong></div>
+          <input id="sandbox-demand-input" type="range" min="500" max="10000" step="500" value="3000" aria-label="Sandbox traffic target" />
+        </div>
+        <div class="sandbox-contracts" aria-label="Selected sandbox contracts">
+          <span><small>p95 latency</small><strong id="sandbox-latency-contract">≤ 95 ms</strong></span>
+          <span><small>Error rate</small><strong id="sandbox-error-contract">&lt; 0.5%</strong></span>
+          <span id="sandbox-data-contract" hidden><small>Data delivery</small><strong id="sandbox-data-contract-value">No background contract</strong></span>
+        </div>
+        <div class="sandbox-footer">
+          <p><b>Unlimited lab budget.</b> Save variants, trace paths, and share any valid graph.</p>
+          <button id="enter-sandbox-button" type="button">Enter Free Lab →</button>
         </div>
       </section>
     </div>
@@ -716,6 +848,17 @@ const brandMark = document.querySelector<HTMLButtonElement>("#brand-mark")!;
 const brandItemPrimary = document.querySelector<HTMLImageElement>("#brand-item-primary")!;
 const brandItemSecondary = document.querySelector<HTMLImageElement>("#brand-item-secondary")!;
 const startOverlay = document.querySelector<HTMLElement>("#start-overlay")!;
+const openSandboxButton = document.querySelector<HTMLButtonElement>("#open-sandbox-button")!;
+const sandboxOverlay = document.querySelector<HTMLElement>("#sandbox-overlay")!;
+const closeSandboxButton = document.querySelector<HTMLButtonElement>("#close-sandbox-button")!;
+const sandboxWorkloads = document.querySelector<HTMLElement>("#sandbox-workloads")!;
+const sandboxDemandInput = document.querySelector<HTMLInputElement>("#sandbox-demand-input")!;
+const sandboxDemandValue = document.querySelector<HTMLElement>("#sandbox-demand-value")!;
+const sandboxLatencyContract = document.querySelector<HTMLElement>("#sandbox-latency-contract")!;
+const sandboxErrorContract = document.querySelector<HTMLElement>("#sandbox-error-contract")!;
+const sandboxDataContract = document.querySelector<HTMLElement>("#sandbox-data-contract")!;
+const sandboxDataContractValue = document.querySelector<HTMLElement>("#sandbox-data-contract-value")!;
+const enterSandboxButton = document.querySelector<HTMLButtonElement>("#enter-sandbox-button")!;
 const phaseBriefingOverlay = document.querySelector<HTMLElement>("#phase-briefing-overlay")!;
 const phaseBriefingEyebrow = document.querySelector<HTMLElement>("#phase-briefing-eyebrow")!;
 const phaseBriefingTitle = document.querySelector<HTMLElement>("#phase-briefing-title")!;
@@ -1116,6 +1259,14 @@ function renderCampaignScreen() {
 }
 
 function renderPhaseProgress() {
+  if (isSandboxMode) {
+    dockPhase.textContent = `LAB · ${sandboxPresets[currentPhase.workload].name}`;
+    phasePips.innerHTML = "<b>FREE LAB</b>";
+    phasePips.dataset.sandbox = "true";
+    configCount.textContent = `${activeConfigs.size} config${activeConfigs.size === 1 ? "" : "s"}`;
+    return;
+  }
+  phasePips.dataset.sandbox = "false";
   dockPhase.textContent = `${String(currentPhase.index + 1).padStart(2, "0")} · ${currentPhase.name}`;
   phasePips.innerHTML = campaignPhases.map((phase) =>
     `<i data-current="${phase.index === currentPhaseIndex}" data-complete="${phase.index < currentPhaseIndex}" title="${phase.name}"></i>`,
@@ -1124,6 +1275,13 @@ function renderPhaseProgress() {
 }
 
 function updateMissionContent() {
+  if (isSandboxMode) {
+    missionLabelElement.textContent = `Free Lab · ${sandboxPresets[currentPhase.workload].name}`;
+    missionTitleElement.textContent = `Sandbox: ${currentPhase.service}`;
+    missionPhaseElement.textContent = isRunning ? "Live workload" : "Build mode";
+    renderPhaseProgress();
+    return;
+  }
   missionLabelElement.textContent = `Phase ${String(currentPhase.index + 1).padStart(2, "0")} · ${currentPhase.service}`;
   missionTitleElement.textContent = `Build: ${currentPhase.service}`;
   renderPhaseProgress();
@@ -1198,9 +1356,9 @@ function dismissPhaseBriefing() {
     : `Build mode ready. Design for ${targetRps.toLocaleString("en-US")} r/s, then start the production drill.`);
 }
 
-function setPhaseParameters(index: number) {
+function applyPhaseParameters(phase: CampaignPhase, index: number) {
   currentPhaseIndex = index;
-  currentPhase = campaignPhases[index];
+  currentPhase = phase;
   totalBudget = currentPhase.budget;
   targetRps = currentPhase.targetRps;
   latencySlo = currentPhase.latencySlo;
@@ -1209,6 +1367,61 @@ function setPhaseParameters(index: number) {
   testTimeLimit = currentPhase.testTimeLimit;
   incidentBudgetCredit = 0;
   syncWiringUi();
+}
+
+function setPhaseParameters(index: number) {
+  isSandboxMode = false;
+  applyPhaseParameters(campaignPhases[index], index);
+}
+
+function updateSandboxSetupUi() {
+  const preset = sandboxPresets[sandboxWorkload];
+  sandboxWorkloads.querySelectorAll<HTMLButtonElement>("button[data-workload]").forEach((button) => {
+    button.setAttribute("aria-checked", String(button.dataset.workload === sandboxWorkload));
+  });
+  sandboxDemandInput.value = String(sandboxTargetRps);
+  sandboxDemandValue.textContent = `${sandboxTargetRps.toLocaleString("en-US")} r/s`;
+  sandboxLatencyContract.textContent = `≤ ${preset.latencySlo} ms`;
+  sandboxErrorContract.textContent = `< ${preset.errorSlo.toFixed(2).replace(/0$/, "")}%`;
+  sandboxDataContract.hidden = !preset.backgroundSlo;
+  if (preset.backgroundSlo) {
+    sandboxDataContractValue.textContent = `≥ ${preset.backgroundSlo.minimumDeliveryPercent.toFixed(1)}% · lag ≤ ${preset.backgroundSlo.maxLagSeconds.toFixed(1)}s`;
+  }
+}
+
+function openSandboxSetup() {
+  updateSandboxSetupUi();
+  sandboxOverlay.dataset.visible = "true";
+  sandboxOverlay.setAttribute("aria-hidden", "false");
+  window.setTimeout(() => sandboxWorkloads.querySelector<HTMLButtonElement>(`button[data-workload="${sandboxWorkload}"]`)?.focus(), 220);
+}
+
+function closeSandboxSetup() {
+  sandboxOverlay.dataset.visible = "false";
+  sandboxOverlay.setAttribute("aria-hidden", "true");
+}
+
+function beginSandboxSession(workload: WorkloadKind, demand: number) {
+  stopTest(true);
+  hideResult();
+  resetTopologyEditor();
+  clearLaboratory();
+  activeConfigs.clear();
+  pendingConfigs.clear();
+  sandboxWorkload = workload;
+  sandboxTargetRps = Math.round(THREE.MathUtils.clamp(demand, 500, 10_000) / 500) * 500;
+  isSandboxMode = true;
+  applyPhaseParameters(createSandboxPhase(sandboxWorkload, sandboxTargetRps), campaignPhases.length);
+  incidentTriggered = false;
+  incidentMode = "pending";
+  incidentTargetNodeId = null;
+  incidentPanel.dataset.visible = "false";
+  closeSandboxSetup();
+  closeCampaignScreen();
+  updateMissionContent();
+  updateUi();
+  updateTelemetry();
+  showToast(`Free Lab ready: ${sandboxPresets[workload].name} at ${sandboxTargetRps.toLocaleString("en-US")} r/s. Build, wire, run, and change anything.`);
 }
 
 function openCampaignScreen() {
@@ -1270,11 +1483,11 @@ function renderConfigPanel() {
   const unlocked = new Set(currentPhase.configUnlocks);
   const plannedSpend = configSpend(pendingConfigs);
   const machineSpend = installedMachineSpend();
-  configBudget.textContent = `$${Math.max(0, totalBudget - machineSpend - plannedSpend).toLocaleString("en-US")}`;
+  configBudget.textContent = isSandboxMode ? "∞" : `$${Math.max(0, totalBudget - machineSpend - plannedSpend).toLocaleString("en-US")}`;
   configList.innerHTML = configDefinitions.map((config) => {
     const isUnlocked = unlocked.has(config.id);
     const selected = pendingConfigs.has(config.id);
-    const cannotAfford = !selected && machineSpend + plannedSpend + config.cost > totalBudget;
+    const cannotAfford = !isSandboxMode && !selected && machineSpend + plannedSpend + config.cost > totalBudget;
     return `
       <button class="config-option" type="button" data-config="${config.id}" data-selected="${selected}" data-locked="${!isUnlocked}" ${!isUnlocked || cannotAfford ? "disabled" : ""}>
         <span class="config-check" aria-hidden="true"><i>✓</i><b>+</b></span>
@@ -2522,6 +2735,9 @@ function clearLaboratory() {
 }
 
 function blueprintStorageKey(phaseIndex = currentPhaseIndex) {
+  if (isSandboxMode && phaseIndex === campaignPhases.length) {
+    return `sysdex-blueprint-v1-lab-${currentPhase.workload}-${targetRps}`;
+  }
   return `sysdex-blueprint-v1-${phaseIndex}`;
 }
 
@@ -2729,7 +2945,12 @@ async function shareBlueprint() {
   const url = new URL(window.location.href);
   url.search = "";
   url.hash = "";
-  url.searchParams.set("phase", String(currentPhaseIndex));
+  if (isSandboxMode) {
+    url.searchParams.set("lab", currentPhase.workload);
+    url.searchParams.set("rps", String(targetRps));
+  } else {
+    url.searchParams.set("phase", String(currentPhaseIndex));
+  }
   url.searchParams.set("design", encoded);
   let copied = false;
   try {
@@ -3821,7 +4042,39 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
   let description = "Select the highlighted part, then click any free floor tile.";
   let state = "build";
 
-  if (currentPhaseIndex > 0) {
+  if (isSandboxMode) {
+    const contractReady = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
+    if (isRunning) {
+      const healthy = metrics.hasCore
+        && metrics.capacity >= targetRps
+        && metrics.latency <= latencySlo
+        && metrics.errors < errorSlo
+        && contractReady;
+      stage = "Free Lab · Live workload";
+      title = healthy ? "Every selected contract is green" : "Observe the limiting contract";
+      description = healthy
+        ? "Keep it running, trace paths, or stop the workload and change the graph. Nothing is locked into a canonical solution."
+        : metrics.diagnosis;
+      state = healthy ? "ready" : "live";
+    } else if (!metrics.hasCore) {
+      stage = "Free Lab · Build anything";
+      title = "Author a complete request path";
+      description = `${metrics.diagnosis} Every compatible component and manual cable is available.`;
+    } else if (metrics.capacity < targetRps) {
+      stage = "Free Lab · Preflight";
+      title = `${metrics.bottleneckKind ? contextualComponentLabel(metrics.bottleneckKind) : "The graph"} limits throughput`;
+      description = `${Math.round(metrics.capacity).toLocaleString("en-US")} / ${targetRps.toLocaleString("en-US")} r/s. Scale, cache, or reroute the graph however you choose.`;
+    } else if (metrics.latency > latencySlo || !contractReady) {
+      stage = "Free Lab · Preflight";
+      title = "One selected contract is still outside its envelope";
+      description = metrics.diagnosis;
+    } else {
+      stage = "Free Lab · Ready";
+      title = "Start the workload or keep crafting";
+      description = "Run continuously, inspect paths, save variants, and share any topology you invent.";
+      state = "ready";
+    }
+  } else if (currentPhaseIndex > 0) {
     stage = "Independent operation · Diagnose the system";
     title = "Read the topology signals";
     description = "Use the SLO preview, hot-tier labels, component specs, and budget to choose your own design.";
@@ -3961,7 +4214,19 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
   missionGuideTitle.textContent = title;
   missionDescriptionElement.textContent = description;
 
-  if (isRunning && incidentMode === "active") {
+  if (isSandboxMode) {
+    const contractReady = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
+    const previewReady = metrics.hasCore && metrics.capacity >= targetRps && metrics.latency <= latencySlo && contractReady;
+    runButton.disabled = !metrics.hasCore;
+    runButton.dataset.ready = String(!isRunning && previewReady);
+    runButton.textContent = isRunning
+      ? "Stop lab workload · T"
+      : !metrics.hasCore
+        ? "Complete request path first"
+        : previewReady
+          ? "Start lab workload · T"
+          : "Run current experiment · T";
+  } else if (isRunning && incidentMode === "active") {
     runButton.disabled = true;
     runButton.dataset.ready = "false";
     runButton.textContent = incidentResponseRequiredKind
@@ -3990,8 +4255,8 @@ function updateMissionGuide(metrics: ReturnType<typeof calculateMetrics>) {
 
 function updateUi() {
   const remaining = remainingBudget();
-  budgetElement.textContent = `$${remaining.toLocaleString("en-US")}`;
-  budgetElement.style.color = remaining < 180 ? "#d66a78" : "#72d9ef";
+  budgetElement.textContent = isSandboxMode ? "BUDGET ∞" : `$${remaining.toLocaleString("en-US")}`;
+  budgetElement.style.color = !isSandboxMode && remaining < 180 ? "#d66a78" : "#72d9ef";
   document.querySelectorAll<HTMLButtonElement>(".part-card").forEach((button) => {
     const kind = button.dataset.kind as ComponentKind;
     const locked = !currentPhase.unlocks.includes(kind);
@@ -4402,8 +4667,12 @@ function syncTestControls() {
   runButton.dataset.running = String(isRunning);
   statusLight.dataset.running = String(isRunning);
   signalTrack.dataset.running = String(isRunning);
-  runButton.textContent = isRunning ? "Abort traffic test · T" : "Start traffic test · T";
-  statusLight.textContent = isRunning ? "Live" : testPhase === "passed" ? "Certified" : "Standby";
+  runButton.textContent = isSandboxMode
+    ? isRunning ? "Stop lab workload · T" : "Start lab workload · T"
+    : isRunning ? "Abort traffic test · T" : "Start traffic test · T";
+  statusLight.textContent = isSandboxMode
+    ? isRunning ? "Lab live" : "Sandbox"
+    : isRunning ? "Live" : testPhase === "passed" ? "Certified" : "Standby";
   syncBlueprintUi();
 }
 
@@ -4512,6 +4781,9 @@ function populateOperationalReview(metrics: ReturnType<typeof calculateMetrics>,
 }
 
 function drillSnapshotStorageKey(phaseIndex = currentPhaseIndex) {
+  if (isSandboxMode && phaseIndex === campaignPhases.length) {
+    return `sysbench-drill-snapshot-v1-lab-${currentPhase.workload}-${targetRps}`;
+  }
   return `sysbench-drill-snapshot-v1-${phaseIndex}`;
 }
 
@@ -4699,7 +4971,9 @@ function startTest() {
   testTimeElement.dataset.state = "live";
   syncTestControls();
   missionPhaseElement.textContent = "Traffic ramp";
-  showToast(`Traffic generator online. Demand is ramping to ${targetRps.toLocaleString("en-US")} requests per second.`);
+  showToast(isSandboxMode
+    ? `Free Lab workload online. Demand is ramping to ${targetRps.toLocaleString("en-US")} requests per second and will run until you stop it.`
+    : `Traffic generator online. Demand is ramping to ${targetRps.toLocaleString("en-US")} requests per second.`);
 }
 
 function stopTest(silent = false) {
@@ -4715,6 +4989,27 @@ function stopTest(silent = false) {
 
 function updateTest(delta: number) {
   if (!isRunning) return;
+  if (isSandboxMode) {
+    testElapsed += delta;
+    const rampProgress = THREE.MathUtils.clamp(testElapsed / rampDuration, 0, 1);
+    currentDemand = Math.round(THREE.MathUtils.lerp(Math.max(100, targetRps * 0.2), targetRps, rampProgress));
+    const metrics = calculateMetrics(currentDemand);
+    const contractHealthy = !("contractSatisfied" in metrics) || metrics.contractSatisfied;
+    const healthy = rampProgress >= 1
+      && metrics.capacity >= targetRps
+      && metrics.latency <= latencySlo
+      && metrics.errors < errorSlo
+      && contractHealthy;
+    testPhase = rampProgress < 1 ? "ramping" : "holding";
+    stableElapsed = healthy ? stableElapsed + delta : 0;
+    missionPhaseElement.textContent = rampProgress < 1 ? "Lab ramp" : healthy ? "Contracts green" : "Observing";
+    testPhaseElement.textContent = rampProgress < 1
+      ? `Ramping · ${currentDemand.toLocaleString("en-US")} r/s`
+      : healthy ? "Continuous workload · all green" : "Continuous workload · inspect graph";
+    testTimeElement.textContent = rampProgress < 1 ? `${Math.ceil(rampDuration - testElapsed)}s` : `${Math.floor(testElapsed)}s live`;
+    testProgressFill.style.scale = `${rampProgress} 1`;
+    return;
+  }
   const waitingForTutorialResponse = currentPhaseIndex === 0 && incidentMode === "active";
   if (!waitingForTutorialResponse) testElapsed += delta;
   const rampProgress = THREE.MathUtils.clamp(testElapsed / rampDuration, 0, 1);
@@ -4910,6 +5205,24 @@ phaseList.addEventListener("click", (event) => {
 });
 
 startPhaseButton.addEventListener("click", () => beginCampaignPhase(selectedCampaignPhase));
+openSandboxButton.addEventListener("click", openSandboxSetup);
+closeSandboxButton.addEventListener("click", closeSandboxSetup);
+sandboxOverlay.addEventListener("click", (event) => {
+  if (event.target === sandboxOverlay) closeSandboxSetup();
+});
+sandboxWorkloads.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-workload]");
+  if (!button) return;
+  const workload = button.dataset.workload as WorkloadKind;
+  if (!Object.prototype.hasOwnProperty.call(sandboxPresets, workload)) return;
+  sandboxWorkload = workload;
+  updateSandboxSetupUi();
+});
+sandboxDemandInput.addEventListener("input", () => {
+  sandboxTargetRps = Number(sandboxDemandInput.value);
+  updateSandboxSetupUi();
+});
+enterSandboxButton.addEventListener("click", () => beginSandboxSession(sandboxWorkload, sandboxTargetRps));
 dismissBriefingButton.addEventListener("click", dismissPhaseBriefing);
 missionsButton.addEventListener("click", openCampaignScreen);
 configsButton.addEventListener("click", openConfigScreen);
@@ -5113,6 +5426,14 @@ canvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 window.addEventListener("keydown", (event) => {
+  if (sandboxOverlay.dataset.visible === "true") {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSandboxSetup();
+      openSandboxButton.focus();
+    }
+    return;
+  }
   if (phaseBriefingOverlay.dataset.visible === "true") {
     if (event.key === "Tab") {
       event.preventDefault();
@@ -5408,9 +5729,44 @@ function provisionCertifiedSpecializedDemo() {
   }
 }
 
+function provisionCertifiedSandboxDemo() {
+  activeConfigs.add("autoscaling");
+  activeConfigs.add("walTuning");
+  activeConfigs.add("circuitBreaker");
+  if (currentPhase.workload === "matching"
+    || currentPhase.workload === "streaming"
+    || currentPhase.workload === "dispatch") {
+    provisionCertifiedSpecializedDemo();
+    return;
+  }
+  const effectiveDemand = targetRps;
+  placeDemoMachinesUntil("loadBalancer", Math.ceil(effectiveDemand / infrastructureComponentCapacity.loadBalancer));
+  placeDemoMachinesUntil("api", Math.ceil(effectiveDemand / (infrastructureComponentCapacity.api * 1.35)));
+  placeDemoMachinesUntil("redis", Math.ceil(effectiveDemand / infrastructureComponentCapacity.redis));
+  placeDemoMachinesUntil("postgres", Math.ceil(effectiveDemand / (infrastructureComponentCapacity.postgres * 1.25 * 3.125)));
+  if (currentPhase.workload === "analytics") {
+    const eventDemand = targetRps * 0.32;
+    const freshnessDemand = currentPhase.backgroundSlo
+      ? eventDemand * 0.82 / Math.max(0.05, currentPhase.backgroundSlo.maxLagSeconds - 0.18)
+      : eventDemand;
+    placeDemoMachinesUntil("queue", Math.ceil(freshnessDemand / infrastructureComponentCapacity.queue));
+    placeDemoMachinesUntil("worker", Math.ceil(freshnessDemand / infrastructureComponentCapacity.worker));
+  }
+}
+
 const searchParams = new URLSearchParams(window.location.search);
+const requestedLab = searchParams.get("lab");
+const requestedLabRps = Number(searchParams.get("rps"));
+const requestedSandbox = requestedLab !== null
+  && Object.prototype.hasOwnProperty.call(sandboxPresets, requestedLab)
+  && Number.isFinite(requestedLabRps)
+  && requestedLabRps >= 500
+  && requestedLabRps <= 10_000;
+if (requestedSandbox) {
+  beginSandboxSession(requestedLab as WorkloadKind, requestedLabRps);
+}
 const requestedPhase = Number(searchParams.get("phase"));
-if (Number.isInteger(requestedPhase) && requestedPhase >= 0 && requestedPhase < campaignPhases.length) {
+if (!requestedSandbox && Number.isInteger(requestedPhase) && requestedPhase >= 0 && requestedPhase < campaignPhases.length) {
   unlockedPhaseIndex = Math.max(unlockedPhaseIndex, requestedPhase);
   selectedCampaignPhase = requestedPhase;
   setPhaseParameters(requestedPhase);
@@ -5429,14 +5785,21 @@ const demoMode = searchParams.get("demo");
 if (demoMode !== null) {
   const releaseDemo = demoMode === "release" || demoMode === "release-certified";
   const diagnosisDemo = demoMode === "diagnosis" || demoMode === "diagnosis-solved";
-  if (!searchParams.has("phase")) {
+  if (!searchParams.has("phase") && !requestedSandbox) {
     setPhaseParameters(releaseDemo ? 0 : 1);
     updateMissionContent();
     updateUi();
     updateTelemetry();
   }
   closeCampaignScreen();
-  if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-backlog" || demoMode === "analytics-manual" || demoMode === "analytics-manual-cut" || demoMode === "analytics-failed") {
+  if (demoMode === "sandbox-certified" && requestedSandbox) {
+    provisionCertifiedSandboxDemo();
+    updateUi();
+    updateTelemetry();
+    runButton.click();
+    for (let second = 0; second < 12; second += 1) updateTest(1);
+    updateTelemetry();
+  } else if (demoMode === "analytics-inherited" || demoMode === "analytics-queue" || demoMode === "analytics-scale" || demoMode === "analytics-backlog" || demoMode === "analytics-manual" || demoMode === "analytics-manual-cut" || demoMode === "analytics-failed") {
     loadInheritedScenario(1);
     if (demoMode === "analytics-queue" || demoMode === "analytics-backlog") placeComponent("queue", { col: 5, row: 4 });
     if (demoMode === "analytics-backlog") {
@@ -5524,7 +5887,7 @@ if (demoMode !== null) {
       updateTelemetry();
     }
   }
-} else {
+} else if (!requestedSandbox) {
   openCampaignScreen();
 }
 const sharedDesign = searchParams.get("design");
