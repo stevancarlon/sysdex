@@ -1003,7 +1003,7 @@ for (const kind of componentOrder) {
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x354958, 21, 38);
+scene.fog = new THREE.Fog(0x102a38, 22, 39);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -1011,7 +1011,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.toneMappingExposure = 1.62;
+renderer.toneMappingExposure = 1.48;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
 camera.position.set(8.8, 16.2, 10.6);
@@ -1020,9 +1020,9 @@ camera.zoom = 1;
 camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-const pixelatedPass = new RenderPixelatedPass(3, scene, camera, {
-  normalEdgeStrength: 0.18,
-  depthEdgeStrength: 0.24,
+const pixelatedPass = new RenderPixelatedPass(2, scene, camera, {
+  normalEdgeStrength: 0.22,
+  depthEdgeStrength: 0.3,
 });
 composer.addPass(pixelatedPass);
 const palettePass = new ShaderPass({
@@ -1030,8 +1030,8 @@ const palettePass = new ShaderPass({
   uniforms: {
     tDiffuse: { value: null },
     blockSize: { value: pixelatedPass.pixelSize },
-    colorLevels: { value: 24 },
-    ditherStrength: { value: 0.012 },
+    colorLevels: { value: 28 },
+    ditherStrength: { value: 0.006 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -1070,10 +1070,10 @@ const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
 
-const ambientLight = new THREE.HemisphereLight(0xf4fbff, 0x496b70, 4.35);
+const ambientLight = new THREE.HemisphereLight(0xdceff2, 0x355864, 4.0);
 scene.add(ambientLight);
 
-const keyLight = new THREE.DirectionalLight(0xfff7df, 5.1);
+const keyLight = new THREE.DirectionalLight(0xe9f4ed, 4.55);
 keyLight.position.set(-9, 15, 11);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(2048, 2048);
@@ -1084,15 +1084,15 @@ keyLight.shadow.camera.bottom = -11;
 keyLight.shadow.bias = -0.0005;
 scene.add(keyLight);
 
-const blueRimFill = new THREE.PointLight(0x8eaee4, 11, 15, 2);
+const blueRimFill = new THREE.PointLight(0x6c9ed1, 8.2, 15, 2);
 blueRimFill.position.set(-5, 5, -4);
 scene.add(blueRimFill);
 
-const coolFill = new THREE.PointLight(0x75e0d6, 12, 15, 2);
+const coolFill = new THREE.PointLight(0x55c8c9, 8.5, 15, 2);
 coolFill.position.set(6, 4, 3);
 scene.add(coolFill);
 
-const frontFill = new THREE.DirectionalLight(0xbce7e2, 1.65);
+const frontFill = new THREE.DirectionalLight(0x9fcfd2, 1.45);
 frontFill.position.set(1, 7, 12);
 scene.add(frontFill);
 
@@ -1129,7 +1129,7 @@ for (const texture of [paintedFasciaTexture, paintedFasciaBumpTexture]) {
   texture.repeat.set(3.6, 0.86);
 }
 
-const floorTexture = createSurfaceTexture("#7fa6a4", "#496773", "#bfd0ca");
+const floorTexture = createSurfaceTexture("#5f7a84", "#344f5d", "#8ba0a3");
 floorTexture.repeat.set(3, 2);
 
 const boardSurfaceMaterial = new THREE.MeshStandardMaterial({
@@ -1138,7 +1138,7 @@ const boardSurfaceMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.96,
   metalness: 0.02,
 });
-const boardFasciaMaterial = fasciaMaterial(0x70869a, 0.86, 0.3, 0.018);
+const boardFasciaMaterial = fasciaMaterial(0x879ba3, 0.86, 0.3, 0.018);
 const boardBase = new THREE.Mesh(
   new THREE.BoxGeometry(columns * tileSize + 0.68, 0.68, rows * tileSize + 0.68),
   [
@@ -1156,7 +1156,7 @@ boardGroup.add(boardBase);
 
 const boardLip = new THREE.Mesh(
   new THREE.BoxGeometry(columns * tileSize + 0.98, 0.34, rows * tileSize + 0.98),
-  fasciaMaterial(0x8ca0aa, 0.8, 0.28, 0.014),
+  fasciaMaterial(0x9aabb0, 0.8, 0.28, 0.014),
 );
 boardLip.position.y = -0.43;
 boardLip.receiveShadow = true;
@@ -1178,7 +1178,7 @@ boardGroup.add(paintedFloor);
 for (let row = 0; row < rows; row += 1) {
   for (let col = 0; col < columns; col += 1) {
     const variation = pseudoRandom(row * columns + col);
-    const tileTints = [0xd1ded7, 0xc3d7d3, 0xbfd0d4, 0xc9ddd8];
+    const tileTints = [0xb9c5c2, 0xaebfbd, 0xa7b8b8, 0xb3c2bf];
     const tileGeometry = new THREE.BoxGeometry(
       tileSize - 0.008,
       0.08 + variation * 0.025,
@@ -1708,44 +1708,44 @@ function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
   const dot = (color: string, x: number, y: number, size = 2) => fill(color, x, y, size, size);
 
   if (kind === "floor") {
-    fill("#91aaa3", 0, 0, 64, 64);
+    fill("#667f87", 0, 0, 64, 64);
     for (let row = 0; row < 2; row += 1) {
       for (let col = 0; col < 2; col += 1) {
         const x = col * 32;
         const y = row * 32;
-        fill("#415f69", x, y, 32, 2);
-        fill("#405961", x, y, 2, 32);
-        fill("#aebfb7", x + 2, y + 2, 28, 2);
-        fill((row + col) % 2 ? "#8fa9a6" : "#9bb4ac", x + 3, y + 4, 27, 26);
-        dot("#31505b", x + 5, y + 7, 1);
-        dot("#77958f", x + 25, y + 25, 1);
+        fill("#294653", x, y, 32, 2);
+        fill("#2d4854", x, y, 2, 32);
+        fill("#8ea2a1", x + 2, y + 2, 28, 2);
+        fill((row + col) % 2 ? "#617b84" : "#6c858b", x + 3, y + 4, 27, 26);
+        dot("#223f4d", x + 5, y + 7, 1);
+        dot("#8ba19e", x + 25, y + 25, 1);
       }
     }
-    fill("#5e817e", 8, 13, 12, 2);
-    fill("#739995", 44, 46, 9, 2);
-    fill("#789794", 48, 18, 6, 1);
+    fill("#4c6b70", 8, 13, 12, 2);
+    fill("#6f9290", 44, 46, 9, 2);
+    fill("#75908e", 48, 18, 6, 1);
   } else if (kind === "wall") {
-    fill("#63828f", 0, 0, 128, 64);
+    fill("#405d6b", 0, 0, 128, 64);
     for (let col = 0; col < 4; col += 1) {
       const x = col * 32;
-      fill("#304b5c", x, 0, 3, 64);
-      fill("#9eb1b2", x + 3, 2, 27, 3);
-      fill(col % 2 ? "#688895" : "#718f98", x + 5, 8, 23, 48);
-      fill("#415f6f", x + 8, 13, 17, 3);
-      fill("#4d6d7a", x + 8, 20, 17, 24);
-      fill("#9ab0ad", x + 10, 22, 13, 3);
-      fill("#284858", x + 10, 29, 13, 11);
-      if (col % 2 === 0) fill("#73dce1", x + 12, 32, 9, 3);
-      dot("#d1ddd5", x + 7, 52);
-      dot("#324c5c", x + 25, 52);
+      fill("#1e3545", x, 0, 3, 64);
+      fill("#718b95", x + 3, 2, 27, 3);
+      fill(col % 2 ? "#466572" : "#4c6d78", x + 5, 8, 23, 48);
+      fill("#294857", x + 8, 13, 17, 3);
+      fill("#345361", x + 8, 20, 17, 24);
+      fill("#6f8992", x + 10, 22, 13, 3);
+      fill("#183846", x + 10, 29, 13, 11);
+      if (col % 2 === 0) fill("#55d7dc", x + 12, 32, 9, 3);
+      dot("#aebfbd", x + 7, 52);
+      dot("#203a49", x + 25, 52);
     }
-    fill("#243d50", 0, 59, 128, 5);
+    fill("#172f40", 0, 59, 128, 5);
   } else {
     const isDark = kind === "machine-dark";
     const isFascia = kind === "fascia";
-    const base = isDark ? "#4f6575" : isFascia ? "#657e8c" : "#b5c4c2";
-    const shade = isDark ? "#2c4354" : isFascia ? "#3e5a6a" : "#788f98";
-    const light = isDark ? "#8298a2" : isFascia ? "#9bafb2" : "#d7dfd8";
+    const base = isDark ? "#405767" : isFascia ? "#506b79" : "#879ca1";
+    const shade = isDark ? "#233c4d" : isFascia ? "#304d5d" : "#536f79";
+    const light = isDark ? "#6d8490" : isFascia ? "#81979d" : "#abbab8";
     fill(base, 0, 0, 64, 64);
     for (let y = 0; y < 64; y += 16) {
       fill(shade, 0, y, 64, 3);
@@ -1758,9 +1758,9 @@ function createPixelWorkshopTexture(kind: PixelWorkshopTextureKind) {
     fill(shade, 4, 53, 22, 3);
     fill(light, 36, 22, 16, 3);
     if (isFascia) {
-      fill("#263f51", 8, 7, 20, 6);
-      fill("#6cced6", 11, 9, 14, 2);
-      fill("#334f60", 39, 39, 17, 8);
+      fill("#183547", 8, 7, 20, 6);
+      fill("#59d1d8", 11, 9, 14, 2);
+      fill("#264657", 39, 39, 17, 8);
     }
   }
 
@@ -1842,9 +1842,9 @@ function fasciaMaterial(color: number, roughness = 0.8, metalness = 0.3, bumpSca
     map: paintedFasciaTexture,
     bumpMap: paintedFasciaBumpTexture,
     bumpScale,
-    emissive: 0x283448,
+    emissive: 0x132b38,
     emissiveMap: paintedFasciaTexture,
-    emissiveIntensity: 0.48,
+    emissiveIntensity: 0.2,
     roughness,
     metalness,
   });
@@ -1882,15 +1882,15 @@ function addMesh(
 function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
   const group = new THREE.Group();
   group.userData.kind = kind;
-  const dark = material(0x6f8796, {
+  const dark = material(0x9aadb2, {
     map: paintedMachineDarkTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.018,
     roughness: 0.78,
     metalness: 0.24,
   });
-  const ink = material(0x263e50, { roughness: 0.72, metalness: 0.25 });
-  const cream = material(0xd7e0da, {
+  const ink = material(0x193747, { roughness: 0.72, metalness: 0.25 });
+  const cream = material(0xc1cbc7, {
     map: paintedMachineNeutralTexture,
     bumpMap: paintedMachineDarkTexture,
     bumpScale: 0.012,
@@ -2214,16 +2214,16 @@ function setBrandItem(kind: ComponentKind, animate = true) {
 }
 
 function addBoardDetails() {
-  const dark = material(0x385365, { roughness: 0.68, metalness: 0.4 });
-  const blue = material(0x7ba5b0, { roughness: 0.61, metalness: 0.2 });
-  const grate = material(0x2f4959, { roughness: 0.74, metalness: 0.52 });
-  const seam = material(0x416d74, {
+  const dark = material(0x284858, { roughness: 0.68, metalness: 0.4 });
+  const blue = material(0x63858f, { roughness: 0.61, metalness: 0.2 });
+  const grate = material(0x1e3b4b, { roughness: 0.74, metalness: 0.52 });
+  const seam = material(0x2f5661, {
     roughness: 0.82,
     metalness: 0.28,
     transparent: true,
     opacity: 0.2,
   });
-  const patch = casingMaterial(0x7d9e9e, 0.92, 0.1, 0.008);
+  const patch = casingMaterial(0x68878b, 0.92, 0.1, 0.008);
 
   for (let col = 1; col < columns; col += 1) {
     addMesh(
@@ -2256,12 +2256,12 @@ function addBoardDetails() {
   exchange.rotation.y = -0.055;
   boardGroup.add(exchange);
 
-  const warmMetal = casingMaterial(0xb8c8c5, 0.88, 0.1, 0.012);
-  const sageMetal = casingMaterial(0x82b6b2, 0.82, 0.15, 0.014);
-  const paleMetal = casingMaterial(0xd4ded8, 0.9, 0.06, 0.01);
-  const signalBlue = casingMaterial(0x55adc0, 0.8, 0.15, 0.012);
-  const signalViolet = casingMaterial(0x7c91c7, 0.8, 0.13, 0.012);
-  const neutralGrate = material(0x385260, { roughness: 0.82, metalness: 0.34 });
+  const warmMetal = casingMaterial(0x84999b, 0.88, 0.1, 0.012);
+  const sageMetal = casingMaterial(0x61928f, 0.82, 0.15, 0.014);
+  const paleMetal = casingMaterial(0xa5b3b0, 0.9, 0.06, 0.01);
+  const signalBlue = casingMaterial(0x42899e, 0.8, 0.15, 0.012);
+  const signalViolet = casingMaterial(0x687cad, 0.8, 0.13, 0.012);
+  const neutralGrate = material(0x243f4e, { roughness: 0.82, metalness: 0.34 });
 
   addMesh(exchange, new THREE.CylinderGeometry(1.08, 1.08, 0.07, 48), warmMetal, [0, 0.035, 0]);
   addMesh(exchange, new THREE.TorusGeometry(0.93, 0.09, 8, 48), signalBlue, [0, 0.105, 0], [Math.PI / 2, 0, 0]);
@@ -2352,18 +2352,18 @@ function addBoardDetails() {
 }
 
 function addEnvironment() {
-  const dark = material(0x354c5d, { roughness: 0.7, metalness: 0.42 });
-  const screen = material(0x7ce8df, { emissive: 0x217b84, emissiveIntensity: 1.45, roughness: 0.25 });
-  const propDark = casingMaterial(0x60798b, 0.82, 0.24, 0.014);
-  const propBlue = casingMaterial(0x79a3b4, 0.74, 0.18, 0.014);
-  const propSage = casingMaterial(0x83aaa5, 0.8, 0.12, 0.012);
-  const propCream = casingMaterial(0xc8d2ce, 0.84, 0.08, 0.01);
-  const propAccent = casingMaterial(0x61bdb5, 0.7, 0.18, 0.012);
-  const propTank = casingMaterial(0x8cb8c2, 0.78, 0.18, 0.014);
-  const fasciaDark = fasciaMaterial(0x526d80, 0.86, 0.24, 0.016);
-  const fasciaBlue = fasciaMaterial(0x7893a0, 0.82, 0.18, 0.014);
+  const dark = material(0x263f50, { roughness: 0.7, metalness: 0.42 });
+  const screen = material(0x64d9d8, { emissive: 0x176d78, emissiveIntensity: 1.2, roughness: 0.25 });
+  const propDark = casingMaterial(0x82969f, 0.82, 0.24, 0.014);
+  const propBlue = casingMaterial(0x9aadb3, 0.74, 0.18, 0.014);
+  const propSage = casingMaterial(0x91aaa5, 0.8, 0.12, 0.012);
+  const propCream = casingMaterial(0xbfc9c5, 0.84, 0.08, 0.01);
+  const propAccent = casingMaterial(0x75bcb5, 0.7, 0.18, 0.012);
+  const propTank = casingMaterial(0x91aeb4, 0.78, 0.18, 0.014);
+  const fasciaDark = fasciaMaterial(0x8195a0, 0.86, 0.24, 0.016);
+  const fasciaBlue = fasciaMaterial(0x94a7ac, 0.82, 0.18, 0.014);
   const paintedBulkhead = new THREE.MeshBasicMaterial({
-    color: 0xb8cbc8,
+    color: 0xb8c5c3,
     map: paintedWallTexture,
     side: THREE.DoubleSide,
   });
@@ -2407,7 +2407,7 @@ function addEnvironment() {
     addMesh(environmentGroup, new THREE.BoxGeometry(0.78, 0.16, 0.09), coolLamp, [x, 1.55, z], [0, rotation, 0]);
   }
   for (const [x, z] of [[-3.7, -4.1], [0, -4.1], [3.7, -4.1]] as const) {
-    const lampLight = new THREE.PointLight(0x8ce8df, 5.6, 5.2, 2);
+    const lampLight = new THREE.PointLight(0x72d8d6, 4.2, 5.2, 2);
     lampLight.position.set(x, 1.5, z);
     environmentGroup.add(lampLight);
   }
