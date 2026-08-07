@@ -20,6 +20,14 @@ import {
   infrastructureComponentCapacity,
   type SpecializedEvaluation,
 } from "./simulation/specializedWorkloads.ts";
+import {
+  compareDrillRuns,
+  validateDrillSnapshot,
+  type DrillBackgroundMode,
+  type DrillComparison,
+  type DrillSnapshotV1,
+  type DrillTrend,
+} from "./simulation/runComparison.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -522,49 +530,61 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
     <div class="result-overlay" id="result-overlay" data-visible="false" aria-hidden="true">
       <section class="result-card" id="result-card" data-outcome="passed" role="dialog" aria-modal="true" aria-labelledby="result-title">
-        <div class="result-signal" aria-hidden="true"><span></span></div>
-        <p class="panel-kicker" id="result-kicker">Traffic certification</p>
-        <h2 id="result-title">Service certified</h2>
-        <p class="result-summary" id="result-summary"></p>
-        <div class="result-stats">
-          <span><small id="result-score-label">Score</small><strong id="result-score">0</strong></span>
-          <span><small id="result-budget-label">Budget left</small><strong id="result-budget">$0</strong></span>
-          <span><small id="result-stability-label">Stable for</small><strong id="result-stability">0.0s</strong></span>
+        <div class="result-scroll">
+          <div class="result-signal" aria-hidden="true"><span></span></div>
+          <p class="panel-kicker" id="result-kicker">Traffic certification</p>
+          <h2 id="result-title">Service certified</h2>
+          <p class="result-summary" id="result-summary"></p>
+          <div class="result-stats">
+            <span><small id="result-score-label">Score</small><strong id="result-score">0</strong></span>
+            <span><small id="result-budget-label">Budget left</small><strong id="result-budget">$0</strong></span>
+            <span><small id="result-stability-label">Stable for</small><strong id="result-stability">0.0s</strong></span>
+          </div>
+          <p class="result-diagnosis" id="result-diagnosis"></p>
+          <section class="result-review" id="result-review" aria-label="Operational review">
+            <div class="result-review-heading"><span>Operational review</span><b id="result-review-profile">Observed graph</b></div>
+            <div class="result-review-grid">
+              <article data-kind="proof"><small>Proven</small><strong id="result-proof-title"></strong><p id="result-proof-copy"></p></article>
+              <article data-kind="risk"><small>Watch</small><strong id="result-risk-title"></strong><p id="result-risk-copy"></p></article>
+              <article data-kind="experiment"><small>Try next</small><strong id="result-experiment-title"></strong><p id="result-experiment-copy"></p></article>
+            </div>
+          </section>
+          <section class="result-comparison" id="result-comparison" data-state="baseline" aria-label="Previous drill comparison">
+            <div class="result-comparison-heading"><span id="result-comparison-label">Experiment baseline</span><b id="result-comparison-outcome">Recorded</b></div>
+            <p id="result-comparison-summary">This run becomes the baseline for the next topology experiment.</p>
+            <div class="result-comparison-grid" id="result-comparison-grid" hidden>
+              <span><small>p95 latency</small><strong id="result-delta-latency">No change</strong></span>
+              <span><small>Capacity</small><strong id="result-delta-capacity">No change</strong></span>
+              <span><small>Spend</small><strong id="result-delta-spend">No change</strong></span>
+              <span><small>Machines</small><strong id="result-delta-machines">No change</strong></span>
+            </div>
+          </section>
+          <section class="result-analysis" id="result-analysis" hidden aria-label="Slow request trace">
+            <div class="result-analysis-heading">
+              <span>Slow request trace</span>
+              <strong id="result-latency-gap">29 ms over target</strong>
+            </div>
+            <div class="result-latency-track" aria-hidden="true">
+              <span></span>
+              <i id="result-latency-slo-marker"></i>
+            </div>
+            <div class="result-trace" aria-label="API Server waits for Analytics Service before responding">
+              <span>API Server</span>
+              <i data-state="blocking"><b>waits</b></i>
+              <span data-state="blocking">Analytics Service</span>
+              <i><b>then</b></i>
+              <span>Response</span>
+            </div>
+          </section>
+          <section class="result-hint" id="result-hint" hidden data-level="0">
+            <div class="result-hint-heading">
+              <span>Design hint</span>
+              <button id="result-hint-button" type="button" aria-expanded="false">Reveal a hint</button>
+            </div>
+            <p id="result-hint-copy" aria-live="polite" hidden></p>
+            <div class="result-hint-progress" aria-hidden="true"><i></i><i></i></div>
+          </section>
         </div>
-        <p class="result-diagnosis" id="result-diagnosis"></p>
-        <section class="result-review" id="result-review" aria-label="Operational review">
-          <div class="result-review-heading"><span>Operational review</span><b id="result-review-profile">Observed graph</b></div>
-          <div class="result-review-grid">
-            <article data-kind="proof"><small>Proven</small><strong id="result-proof-title"></strong><p id="result-proof-copy"></p></article>
-            <article data-kind="risk"><small>Watch</small><strong id="result-risk-title"></strong><p id="result-risk-copy"></p></article>
-            <article data-kind="experiment"><small>Try next</small><strong id="result-experiment-title"></strong><p id="result-experiment-copy"></p></article>
-          </div>
-        </section>
-        <section class="result-analysis" id="result-analysis" hidden aria-label="Slow request trace">
-          <div class="result-analysis-heading">
-            <span>Slow request trace</span>
-            <strong id="result-latency-gap">29 ms over target</strong>
-          </div>
-          <div class="result-latency-track" aria-hidden="true">
-            <span></span>
-            <i id="result-latency-slo-marker"></i>
-          </div>
-          <div class="result-trace" aria-label="API Server waits for Analytics Service before responding">
-            <span>API Server</span>
-            <i data-state="blocking"><b>waits</b></i>
-            <span data-state="blocking">Analytics Service</span>
-            <i><b>then</b></i>
-            <span>Response</span>
-          </div>
-        </section>
-        <section class="result-hint" id="result-hint" hidden data-level="0">
-          <div class="result-hint-heading">
-            <span>Design hint</span>
-            <button id="result-hint-button" type="button" aria-expanded="false">Reveal a hint</button>
-          </div>
-          <p id="result-hint-copy" aria-live="polite" hidden></p>
-          <div class="result-hint-progress" aria-hidden="true"><i></i><i></i></div>
-        </section>
         <div class="result-actions">
           <button class="result-button result-button-primary" id="retry-button" type="button">Run again</button>
           <button class="result-button" id="dismiss-result-button" type="button">Keep building</button>
@@ -646,6 +666,15 @@ const resultRiskTitle = document.querySelector<HTMLElement>("#result-risk-title"
 const resultRiskCopy = document.querySelector<HTMLElement>("#result-risk-copy")!;
 const resultExperimentTitle = document.querySelector<HTMLElement>("#result-experiment-title")!;
 const resultExperimentCopy = document.querySelector<HTMLElement>("#result-experiment-copy")!;
+const resultComparison = document.querySelector<HTMLElement>("#result-comparison")!;
+const resultComparisonLabel = document.querySelector<HTMLElement>("#result-comparison-label")!;
+const resultComparisonOutcome = document.querySelector<HTMLElement>("#result-comparison-outcome")!;
+const resultComparisonSummary = document.querySelector<HTMLElement>("#result-comparison-summary")!;
+const resultComparisonGrid = document.querySelector<HTMLElement>("#result-comparison-grid")!;
+const resultDeltaLatency = document.querySelector<HTMLElement>("#result-delta-latency")!;
+const resultDeltaCapacity = document.querySelector<HTMLElement>("#result-delta-capacity")!;
+const resultDeltaSpend = document.querySelector<HTMLElement>("#result-delta-spend")!;
+const resultDeltaMachines = document.querySelector<HTMLElement>("#result-delta-machines")!;
 const resultAnalysis = document.querySelector<HTMLElement>("#result-analysis")!;
 const resultLatencyGap = document.querySelector<HTMLElement>("#result-latency-gap")!;
 const resultLatencySloMarker = document.querySelector<HTMLElement>("#result-latency-slo-marker")!;
@@ -4269,6 +4298,115 @@ function populateOperationalReview(metrics: ReturnType<typeof calculateMetrics>,
   }
 }
 
+function drillSnapshotStorageKey(phaseIndex = currentPhaseIndex) {
+  return `sysbench-drill-snapshot-v1-${phaseIndex}`;
+}
+
+function normalizeDrillBackgroundMode(value: unknown): DrillBackgroundMode {
+  if (value === "missing" || value === "synchronous" || value === "asynchronous") return value;
+  return "none";
+}
+
+function createDrillSnapshot(metrics: ReturnType<typeof calculateMetrics>, passed: boolean): DrillSnapshotV1 {
+  const topology = "topology" in metrics ? metrics.topology : null;
+  const disconnectedNodeIds = new Set(topology?.disconnectedNodeIds ?? []);
+  return {
+    version: 1,
+    phaseIndex: currentPhaseIndex,
+    completedAt: Date.now(),
+    passed,
+    capacity: Math.max(0, metrics.capacity),
+    latency: Math.max(0, metrics.latency),
+    errors: Math.max(0, metrics.errors),
+    spend: Math.max(0, installedMachineSpend() + configSpend()),
+    machineCount: nodes.length,
+    connectedMachineCount: nodes.filter((node) => !disconnectedNodeIds.has(String(node.id))).length,
+    configCount: activeConfigs.size,
+    backgroundMode: normalizeDrillBackgroundMode(topology?.backgroundMode),
+    topologyMode,
+  };
+}
+
+function readPreviousDrillSnapshot(): DrillSnapshotV1 | null {
+  try {
+    const raw = window.localStorage.getItem(drillSnapshotStorageKey());
+    if (!raw) return null;
+    return validateDrillSnapshot(JSON.parse(raw), currentPhaseIndex);
+  } catch {
+    return null;
+  }
+}
+
+function saveDrillSnapshot(snapshot: DrillSnapshotV1) {
+  try {
+    window.localStorage.setItem(drillSnapshotStorageKey(), JSON.stringify(snapshot));
+  } catch {
+    // The comparison is a progressive enhancement when storage is unavailable.
+  }
+}
+
+function setDrillDelta(element: HTMLElement, value: number, trend: DrillTrend, unit: string, prefix = "") {
+  const rounded = Math.round(value * 10) / 10;
+  const absolute = Math.abs(rounded).toLocaleString("en-US", { maximumFractionDigits: 1 });
+  element.parentElement!.dataset.trend = trend;
+  element.textContent = rounded === 0
+    ? "No change"
+    : `${rounded > 0 ? "+" : "−"}${prefix}${absolute}${unit}`;
+}
+
+function comparisonSummary(comparison: DrillComparison) {
+  if (!comparison.previous.passed && comparison.current.passed) {
+    return "The changed design turned a failed drill into certification. Use the deltas to identify what the extra safety cost.";
+  }
+  if (comparison.previous.passed && !comparison.current.passed) {
+    return "This variant lost certification. Trace the regression, then decide whether its savings or simpler graph justify another change.";
+  }
+  if (comparison.backgroundModeChanged) {
+    const labels: Record<DrillBackgroundMode, string> = {
+      none: "no background path",
+      missing: "an incomplete background path",
+      synchronous: "blocking background work",
+      asynchronous: "isolated asynchronous work",
+    };
+    return `Background behavior changed from ${labels[comparison.previous.backgroundMode]} to ${labels[comparison.current.backgroundMode]}. Compare the latency and spend tradeoff.`;
+  }
+  if (comparison.topologyModeChanged) {
+    return `Routing changed from ${comparison.previous.topologyMode} to ${comparison.current.topologyMode}. The measurements show whether the authored graph changed behavior.`;
+  }
+  if (comparison.machineCount.value !== 0) {
+    return `${Math.abs(comparison.machineCount.value)} machine${Math.abs(comparison.machineCount.value) === 1 ? "" : "s"} ${comparison.machineCount.value > 0 ? "added" : "removed"}. Capacity, latency, and spend show what that topology change bought.`;
+  }
+  const unchanged = comparison.capacity.value === 0
+    && comparison.latency.value === 0
+    && comparison.errors.value === 0
+    && comparison.spend.value === 0;
+  return unchanged
+    ? "The observed result is unchanged. Modify one boundary, capacity tier, or runbook before the next drill to create a useful comparison."
+    : "The graph shape stayed constant, but its policies or operating state changed. Inspect which measured tradeoff moved.";
+}
+
+function populateDrillComparison(previous: DrillSnapshotV1 | null, current: DrillSnapshotV1) {
+  const comparison = previous ? compareDrillRuns(previous, current) : null;
+  if (!comparison) {
+    resultComparison.dataset.state = "baseline";
+    resultComparisonLabel.textContent = "Experiment baseline";
+    resultComparisonOutcome.textContent = current.passed ? "Certified baseline" : "Failed baseline";
+    resultComparisonSummary.textContent = "This run is saved for this phase. Change one variable and rerun to see the measured tradeoff.";
+    resultComparisonGrid.hidden = true;
+    return;
+  }
+
+  resultComparison.dataset.state = "comparison";
+  resultComparisonLabel.textContent = "Compared with previous drill";
+  resultComparisonOutcome.textContent = `${comparison.previous.passed ? "Certified" : "Failed"} → ${comparison.current.passed ? "Certified" : "Failed"}`;
+  resultComparisonSummary.textContent = comparisonSummary(comparison);
+  resultComparisonGrid.hidden = false;
+  setDrillDelta(resultDeltaLatency, comparison.latency.value, comparison.latency.trend, " ms");
+  setDrillDelta(resultDeltaCapacity, comparison.capacity.value, comparison.capacity.trend, " r/s");
+  setDrillDelta(resultDeltaSpend, comparison.spend.value, comparison.spend.trend, "", "$");
+  setDrillDelta(resultDeltaMachines, comparison.machineCount.value, comparison.machineCount.trend, Math.abs(comparison.machineCount.value) === 1 ? " machine" : " machines");
+}
+
 function finishTest(passed: boolean) {
   closeRequestTrace(true);
   isRunning = false;
@@ -4310,6 +4448,9 @@ function finishTest(passed: boolean) {
   resultStability.textContent = blockingAnalyticsFailure ? `$${remainingBudget().toLocaleString("en-US")}` : `${stableElapsed.toFixed(1)}s`;
   resultDiagnosis.textContent = metrics.diagnosis;
   populateOperationalReview(metrics, passed);
+  const drillSnapshot = createDrillSnapshot(metrics, passed);
+  populateDrillComparison(readPreviousDrillSnapshot(), drillSnapshot);
+  saveDrillSnapshot(drillSnapshot);
   resultAnalysis.hidden = !blockingAnalyticsFailure;
   resultHint.hidden = !blockingAnalyticsFailure;
   if (blockingAnalyticsFailure) {

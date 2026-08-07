@@ -17,6 +17,11 @@ import type {
   SimulationGraph,
   SimulationNode,
 } from "../src/simulation/graph.ts";
+import {
+  compareDrillRuns,
+  validateDrillSnapshot,
+  type DrillSnapshotV1,
+} from "../src/simulation/runComparison.ts";
 
 const options = { demand: 1_200, latencySlo: 115, errorSlo: 1.5 };
 
@@ -370,4 +375,67 @@ test("streaming certifies metadata, playback, and transcode routes independently
   assert.equal(Math.round(brokenDelivery.capacity), 5_128);
   assert.equal(brokenDelivery.bottleneckKind, "cdn");
   assert.equal(brokenDelivery.meetsContract, false);
+});
+
+test("drill comparison treats faster capacity as improvement and higher spend as a tradeoff", () => {
+  const previous: DrillSnapshotV1 = {
+    version: 1,
+    phaseIndex: 1,
+    completedAt: 100,
+    passed: false,
+    capacity: 1120,
+    latency: 152,
+    errors: 0.8,
+    spend: 1290,
+    machineCount: 8,
+    connectedMachineCount: 8,
+    configCount: 0,
+    backgroundMode: "synchronous",
+    topologyMode: "automatic",
+  };
+  const current: DrillSnapshotV1 = {
+    ...previous,
+    completedAt: 200,
+    passed: true,
+    capacity: 1320,
+    latency: 103,
+    errors: 0.2,
+    spend: 1420,
+    machineCount: 9,
+    connectedMachineCount: 9,
+    backgroundMode: "asynchronous",
+  };
+
+  const comparison = compareDrillRuns(previous, current);
+  assert.ok(comparison);
+  assert.equal(comparison.outcomeChanged, true);
+  assert.equal(comparison.backgroundModeChanged, true);
+  assert.deepEqual(comparison.capacity, { value: 200, trend: "better" });
+  assert.deepEqual(comparison.latency, { value: -49, trend: "better" });
+  assert.deepEqual(comparison.spend, { value: 130, trend: "worse" });
+  assert.deepEqual(comparison.machineCount, { value: 1, trend: "neutral" });
+});
+
+test("persisted drill snapshots are phase-local and reject malformed metrics", () => {
+  const valid: DrillSnapshotV1 = {
+    version: 1,
+    phaseIndex: 6,
+    completedAt: 100,
+    passed: true,
+    capacity: 8000,
+    latency: 27,
+    errors: 0,
+    spend: 4240,
+    machineCount: 17,
+    connectedMachineCount: 17,
+    configCount: 3,
+    backgroundMode: "asynchronous",
+    topologyMode: "manual",
+  };
+
+  assert.deepEqual(validateDrillSnapshot(valid, 6), valid);
+  assert.equal(validateDrillSnapshot(valid, 7), null);
+  assert.equal(validateDrillSnapshot({ ...valid, connectedMachineCount: 18 }, 6), null);
+  assert.equal(validateDrillSnapshot({ ...valid, latency: Number.NaN }, 6), null);
+  assert.equal(compareDrillRuns(valid, { ...valid, phaseIndex: 7 }), null);
 });
