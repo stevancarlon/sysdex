@@ -40,6 +40,11 @@ export type CampaignPhase = {
   targetRps: number;
   latencySlo: number;
   errorSlo: number;
+  backgroundSlo?: {
+    label: string;
+    maxLagSeconds: number;
+    minimumDeliveryPercent: number;
+  };
   budget: number;
   certificationSeconds: number;
   testTimeLimit: number;
@@ -145,6 +150,11 @@ export const campaignPhases: CampaignPhase[] = [
     targetRps: 1_200,
     latencySlo: 115,
     errorSlo: 1.5,
+    backgroundSlo: {
+      label: "Click analytics",
+      maxLagSeconds: 1,
+      minimumDeliveryPercent: 99.5,
+    },
     budget: 1_790,
     certificationSeconds: 7,
     testTimeLimit: 27,
@@ -305,6 +315,11 @@ export const campaignPhases: CampaignPhase[] = [
     targetRps: 8_000,
     latencySlo: 58,
     errorSlo: 0.12,
+    backgroundSlo: {
+      label: "Transcode jobs",
+      maxLagSeconds: 1,
+      minimumDeliveryPercent: 99.5,
+    },
     budget: 12_800,
     certificationSeconds: 11,
     testTimeLimit: 43,
@@ -337,6 +352,11 @@ export const campaignPhases: CampaignPhase[] = [
     targetRps: 8_500,
     latencySlo: 48,
     errorSlo: 0.1,
+    backgroundSlo: {
+      label: "Driver locations",
+      maxLagSeconds: 0.8,
+      minimumDeliveryPercent: 99.8,
+    },
     budget: 16_000,
     certificationSeconds: 12,
     testTimeLimit: 46,

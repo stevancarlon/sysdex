@@ -22,6 +22,7 @@ import {
   validateDrillSnapshot,
   type DrillSnapshotV1,
 } from "../src/simulation/runComparison.ts";
+import { evaluateBackgroundCorrectness } from "../src/simulation/correctness.ts";
 
 const options = { demand: 1_200, latencySlo: 115, errorSlo: 1.5 };
 
@@ -438,4 +439,37 @@ test("persisted drill snapshots are phase-local and reject malformed metrics", (
   assert.equal(validateDrillSnapshot({ ...valid, connectedMachineCount: 18 }, 6), null);
   assert.equal(validateDrillSnapshot({ ...valid, latency: Number.NaN }, 6), null);
   assert.equal(compareDrillRuns(valid, { ...valid, phaseIndex: 7 }), null);
+});
+
+test("background correctness follows delivery and lag rather than a prescribed topology", () => {
+  const asynchronousGraph = inheritedGraph();
+  asynchronousGraph.nodes.push(node("events", "queue"));
+  asynchronousGraph.edges = asynchronousGraph.edges.filter((candidate) => candidate.to !== "analytics-1");
+  asynchronousGraph.edges.push(
+    edge("api-1", "events", "enqueue"),
+    edge("events", "analytics-1", "consume"),
+  );
+  const synchronous = evaluateSocialRedirectGraph(inheritedGraph(), options);
+  const asynchronous = evaluateSocialRedirectGraph(asynchronousGraph, options);
+  const contract = { minimumDeliveryPercent: 99.5, maxLagSeconds: 1 };
+
+  const blocking = evaluateBackgroundCorrectness(synchronous, contract);
+  assert.equal(blocking.meetsContract, true);
+  assert.equal(blocking.status, "blocking");
+  assert.equal(blocking.deliveryPercent, 100);
+
+  const isolated = evaluateBackgroundCorrectness(asynchronous, contract);
+  assert.equal(isolated.meetsContract, true);
+  assert.equal(isolated.status, "healthy");
+  assert.ok(isolated.lagSeconds < 1);
+
+  const underprovisionedGraph = inheritedGraph();
+  underprovisionedGraph.nodes.push(node("events", "queue"));
+  underprovisionedGraph.edges = underprovisionedGraph.edges.filter((candidate) => candidate.to !== "analytics-1");
+  underprovisionedGraph.edges.push(edge("api-1", "events", "enqueue"));
+  const underprovisioned = evaluateSocialRedirectGraph(underprovisionedGraph, options);
+  const failing = evaluateBackgroundCorrectness(underprovisioned, contract);
+  assert.equal(failing.meetsContract, false);
+  assert.equal(failing.status, "backlogged");
+  assert.ok(failing.deliveryPercent < 99.5);
 });

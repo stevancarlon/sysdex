@@ -28,6 +28,7 @@ import {
   type DrillSnapshotV1,
   type DrillTrend,
 } from "./simulation/runComparison.ts";
+import { evaluateBackgroundCorrectness } from "./simulation/correctness.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -326,11 +327,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <section class="briefing-step briefing-success briefing-enter-item">
             <span class="briefing-step-number">2</span>
             <div class="briefing-step-content">
-              <p class="briefing-step-label">Pass all three checks</p>
-              <div class="briefing-targets" aria-label="Phase success criteria">
+              <p class="briefing-step-label">Pass every service contract</p>
+              <div class="briefing-targets" id="briefing-targets" aria-label="Phase success criteria">
                 <div><small>Handle traffic</small><strong id="briefing-target-rps">500 r/s</strong></div>
                 <div><small>Keep it fast</small><strong id="briefing-target-latency">p95 ≤ 160 ms</strong></div>
                 <div><small>Avoid errors</small><strong id="briefing-target-errors">&lt; 2.0%</strong></div>
+                <div id="briefing-background-target" hidden><small id="briefing-background-label">Deliver events</small><strong id="briefing-target-background">lag ≤ 1.0s</strong></div>
               </div>
             </div>
           </section>
@@ -447,6 +449,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <div class="metric"><span>Throughput</span><strong id="throughput">0 r/s</strong></div>
         <div class="metric"><span>p95 latency</span><strong id="latency">—</strong></div>
         <div class="metric"><span>Errors</span><strong id="errors">0.0%</strong></div>
+      </div>
+      <div class="delivery-meter" id="delivery-meter" data-met="false" hidden>
+        <div><span id="delivery-label">Event freshness</span><strong id="delivery-value">— / 1.0s</strong></div>
+        <div class="delivery-track" aria-hidden="true"><i id="delivery-fill"></i></div>
+        <p id="delivery-status">No delivery path</p>
       </div>
       <div class="signal-track" id="signal-track" data-running="false" aria-hidden="true">
         <div class="signal-line"></div>
@@ -611,6 +618,11 @@ const signalTrack = document.querySelector<HTMLDivElement>("#signal-track")!;
 const throughputElement = document.querySelector<HTMLElement>("#throughput")!;
 const latencyElement = document.querySelector<HTMLElement>("#latency")!;
 const errorsElement = document.querySelector<HTMLElement>("#errors")!;
+const deliveryMeter = document.querySelector<HTMLElement>("#delivery-meter")!;
+const deliveryLabel = document.querySelector<HTMLElement>("#delivery-label")!;
+const deliveryValue = document.querySelector<HTMLElement>("#delivery-value")!;
+const deliveryFill = document.querySelector<HTMLElement>("#delivery-fill")!;
+const deliveryStatus = document.querySelector<HTMLElement>("#delivery-status")!;
 const toastElement = document.querySelector<HTMLDivElement>("#toast")!;
 const selectedCard = document.querySelector<HTMLDivElement>("#selected-card")!;
 const selectedName = document.querySelector<HTMLElement>("#selected-name")!;
@@ -709,6 +721,10 @@ const briefingToolboxLabel = document.querySelector<HTMLElement>("#briefing-tool
 const briefingTargetRps = document.querySelector<HTMLElement>("#briefing-target-rps")!;
 const briefingTargetLatency = document.querySelector<HTMLElement>("#briefing-target-latency")!;
 const briefingTargetErrors = document.querySelector<HTMLElement>("#briefing-target-errors")!;
+const briefingTargets = document.querySelector<HTMLElement>("#briefing-targets")!;
+const briefingBackgroundTarget = document.querySelector<HTMLElement>("#briefing-background-target")!;
+const briefingBackgroundLabel = document.querySelector<HTMLElement>("#briefing-background-label")!;
+const briefingTargetBackground = document.querySelector<HTMLElement>("#briefing-target-background")!;
 const briefingTargetBudget = document.querySelector<HTMLElement>("#briefing-target-budget")!;
 const briefingBudgetLabel = document.querySelector<HTMLElement>("#briefing-budget-label")!;
 const briefingUnlocks = document.querySelector<HTMLElement>("#briefing-unlocks")!;
@@ -1078,9 +1094,12 @@ function renderCampaignScreen() {
   const nextConfig = phase.configUnlocks.length > 0
     ? phase.configUnlocks.map((id) => configDefinitions.find((config) => config.id === id)?.label).filter(Boolean).join(" · ")
     : "Core topology only";
+  const backgroundTarget = phase.backgroundSlo
+    ? ` · ${phase.backgroundSlo.label} lag ≤ ${phase.backgroundSlo.maxLagSeconds.toFixed(1)}s`
+    : "";
   phaseBrief.innerHTML = `
     <div><span>Production target</span><b>${phase.targetRps.toLocaleString("en-US")} r/s</b></div>
-    <div><span>Reliability SLO</span><b>p95 ≤ ${phase.latencySlo} ms · errors &lt; ${phase.errorSlo}%</b></div>
+    <div><span>Reliability SLO</span><b>p95 ≤ ${phase.latencySlo} ms · errors &lt; ${phase.errorSlo}%${backgroundTarget}</b></div>
     <div><span>Failure drill</span><b>${phase.incident.title}</b></div>
     <p>${phase.lesson}</p>
     <small>Runbook: ${nextConfig}</small>
@@ -1121,6 +1140,12 @@ function renderPhaseBriefing() {
   briefingTargetRps.textContent = `${currentPhase.targetRps.toLocaleString("en-US")} r/s`;
   briefingTargetLatency.textContent = `p95 ≤ ${currentPhase.latencySlo} ms`;
   briefingTargetErrors.textContent = `< ${currentPhase.errorSlo.toFixed(1)}%`;
+  briefingTargets.dataset.count = currentPhase.backgroundSlo ? "4" : "3";
+  briefingBackgroundTarget.hidden = !currentPhase.backgroundSlo;
+  if (currentPhase.backgroundSlo) {
+    briefingBackgroundLabel.textContent = `Deliver ${currentPhase.backgroundSlo.label.toLocaleLowerCase("en-US")}`;
+    briefingTargetBackground.textContent = `≥ ${currentPhase.backgroundSlo.minimumDeliveryPercent.toFixed(1)}% · lag ≤ ${currentPhase.backgroundSlo.maxLagSeconds.toFixed(1)}s`;
+  }
   briefingBudgetLabel.textContent = currentPhaseIndex === 1 ? "Remaining" : "Budget";
   briefingTargetBudget.textContent = `$${(currentPhaseIndex === 1 ? 360 : currentPhase.budget).toLocaleString("en-US")}`;
   briefingUnlocks.innerHTML = currentPhase.unlocks.map((kind) => {
@@ -3340,6 +3365,7 @@ function evaluateCoreMetrics(
     latencySlo,
     errorSlo,
   });
+  const correctness = evaluateBackgroundCorrectness(topology, currentPhase.backgroundSlo);
   const incidentLatency = incidentOpen
     ? currentPhase.incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
     : 0;
@@ -3390,6 +3416,7 @@ function evaluateCoreMetrics(
     counts,
     effectiveCounts,
     topology,
+    correctness,
     contractSatisfied,
   };
 }
@@ -3407,6 +3434,7 @@ function evaluateAnalyticsMetrics(
     latencySlo,
     errorSlo,
   });
+  const correctness = evaluateBackgroundCorrectness(topology, currentPhase.backgroundSlo);
   const incidentLatency = incidentOpen
     ? currentPhase.incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
     : 0;
@@ -3419,7 +3447,8 @@ function evaluateAnalyticsMetrics(
     && topology.capacity >= demand
     && latency <= latencySlo
     && errors < errorSlo
-    && topology.backgroundHealthy;
+    && topology.backgroundHealthy
+    && correctness.meetsContract;
   let bottleneckKind = topology.bottleneckKind as ComponentKind | null;
   let diagnosis = "Every required request and event path is inside its operating envelope.";
 
@@ -3436,6 +3465,9 @@ function evaluateAnalyticsMetrics(
     diagnosis = topology.backgroundMode === "asynchronous"
       ? `Redirects respond, but Analytics Service cannot drain ${Math.round(topology.backgroundArrivalRps).toLocaleString("en-US")} click events/s. The queue backlog keeps growing.`
       : "Redirects respond, but click events have no complete path to Analytics Service and durable storage.";
+  } else if (!correctness.meetsContract) {
+    bottleneckKind = topology.backgroundBottleneckKind as ComponentKind | null ?? "queue";
+    diagnosis = `Click events are delivered, but ${correctness.lagSeconds.toFixed(1)}s freshness misses the ${correctness.maxLagSeconds?.toFixed(1)}s data contract. Add drain headroom or shorten the event path.`;
   } else if (topology.capacity < demand) {
     if (topology.backgroundMode === "missing") {
       bottleneckKind = "worker";
@@ -3472,6 +3504,7 @@ function evaluateAnalyticsMetrics(
     counts,
     effectiveCounts,
     topology,
+    correctness,
     contractSatisfied,
   };
 }
@@ -3490,6 +3523,7 @@ function evaluateSpecializedMetrics(
   if (currentPhase.workload === "matching") topology = evaluateMatchingGraph(graph, options);
   else if (currentPhase.workload === "streaming") topology = evaluateStreamingGraph(graph, options);
   else topology = evaluateDispatchGraph(graph, options);
+  const correctness = evaluateBackgroundCorrectness(topology, currentPhase.backgroundSlo);
 
   const incidentLatency = incidentOpen
     ? currentPhase.incident.latencyPenalty * recoveryProgress * (activeConfigs.has("circuitBreaker") ? 0.58 : 1)
@@ -3505,7 +3539,8 @@ function evaluateSpecializedMetrics(
     && topology.capacity >= demand
     && latency <= latencySlo
     && errors < errorSlo
-    && topology.backgroundHealthy;
+    && topology.backgroundHealthy
+    && correctness.meetsContract;
   let bottleneckKind = topology.bottleneckKind as ComponentKind | null;
   let diagnosis = "Every connected route is inside its operating envelope.";
 
@@ -3532,6 +3567,10 @@ function evaluateSpecializedMetrics(
         ? "Ride requests respond, but driver locations have no complete API → Queue → Location Worker → PostgreSQL path."
         : `Location updates are building a ${Math.round(topology.backgroundBacklogRps).toLocaleString("en-US")}/s backlog behind the request path.`;
     }
+  } else if (!correctness.meetsContract) {
+    bottleneckKind = topology.backgroundBottleneckKind as ComponentKind | null ?? "queue";
+    const subject = currentPhase.backgroundSlo?.label ?? "Background data";
+    diagnosis = `${subject} arrive ${correctness.lagSeconds.toFixed(1)}s late, outside the ${correctness.maxLagSeconds?.toFixed(1)}s freshness contract. Increase queue drain headroom or shorten the commit path.`;
   } else if (topology.capacity < demand) {
     const capacity = Math.round(topology.capacity).toLocaleString("en-US");
     if (bottleneckKind === "loadBalancer") diagnosis = `Only connected ingress machines contribute; this route carries ${capacity} r/s.`;
@@ -3567,6 +3606,7 @@ function evaluateSpecializedMetrics(
     counts,
     effectiveCounts,
     topology,
+    correctness,
     contractSatisfied,
   };
 }
@@ -3836,33 +3876,50 @@ function updateTelemetry() {
     || currentPhase.workload === "dispatch") && "topology" in metrics
     ? metrics.topology
     : null;
+  const backgroundCorrectness = metrics.correctness;
   const backgroundLabel = objectiveBackground.querySelector<HTMLElement>("span")!;
   updateMissionGuide(metrics);
   objectiveThroughput.dataset.met = String(capacityMet);
   objectiveLatency.dataset.met = String(latencyMet);
   objectiveErrors.dataset.met = String(errorsMet || testPhase === "passed");
-  objectiveBackground.hidden = backgroundTopology === null;
-  objectiveBackground.dataset.met = String(backgroundTopology?.backgroundHealthy ?? false);
-  objectiveBackground.dataset.risk = String(backgroundTopology !== null && !backgroundTopology.backgroundHealthy);
+  objectiveBackground.hidden = !backgroundCorrectness.required;
+  objectiveBackground.dataset.met = String(backgroundCorrectness.meetsContract);
+  objectiveBackground.dataset.risk = String(backgroundCorrectness.required && !backgroundCorrectness.meetsContract);
   objectiveThroughputValue.textContent = `${Math.min(metrics.capacity, targetRps).toLocaleString("en-US")} / ${targetRps} r/s`;
   objectiveLatencyValue.textContent = `${metrics.hasCore ? metrics.latency : "—"} / ${latencySlo} ms`;
   objectiveErrorsValue.textContent = isRunning || testPhase === "passed" || testPhase === "failed"
     ? `${metrics.errors.toFixed(1)} / ${errorSlo.toFixed(1)}%`
     : "Run test";
-  if (backgroundTopology) {
-    backgroundLabel.textContent = currentPhase.workload === "streaming"
-      ? "Transcode path"
-      : currentPhase.workload === "dispatch"
-        ? "Location events"
-        : "Analytics path";
+  if (backgroundTopology && backgroundCorrectness.required) {
+    backgroundLabel.textContent = currentPhase.backgroundSlo?.label ?? "Background delivery";
     objectiveBackground.dataset.mode = backgroundTopology.backgroundMode;
-    objectiveBackgroundValue.textContent = backgroundTopology.backgroundMode === "synchronous"
-      ? "Delivered · blocking"
-      : backgroundTopology.backgroundHealthy
-        ? `${backgroundTopology.backgroundLagSeconds.toFixed(1)}s delivery lag`
-        : backgroundTopology.backgroundMode === "asynchronous"
-          ? `+${Math.round(backgroundTopology.backgroundBacklogRps)} ${currentPhase.workload === "streaming" ? "jobs" : "evt"}/s backlog`
-          : "No delivery path";
+    objectiveBackgroundValue.textContent = backgroundCorrectness.status === "missing"
+      ? "No delivery path"
+      : backgroundCorrectness.status === "backlogged"
+        ? `${backgroundCorrectness.deliveryPercent.toFixed(1)}% · +${Math.round(backgroundCorrectness.backlogRps)}/s backlog`
+        : `${backgroundCorrectness.lagSeconds.toFixed(1)} / ${backgroundCorrectness.maxLagSeconds?.toFixed(1)}s${backgroundCorrectness.mode === "synchronous" ? " · blocking" : ""}`;
+  }
+
+  deliveryMeter.hidden = !backgroundCorrectness.required;
+  if (backgroundCorrectness.required) {
+    const lagRatio = Number.isFinite(backgroundCorrectness.lagSeconds)
+      ? THREE.MathUtils.clamp(backgroundCorrectness.lagSeconds / Math.max(0.01, backgroundCorrectness.maxLagSeconds ?? 1), 0, 1)
+      : 1;
+    deliveryMeter.dataset.met = String(backgroundCorrectness.meetsContract);
+    deliveryLabel.textContent = `${currentPhase.backgroundSlo?.label ?? "Background data"} freshness`;
+    deliveryValue.textContent = Number.isFinite(backgroundCorrectness.lagSeconds)
+      ? `${backgroundCorrectness.lagSeconds.toFixed(1)} / ${backgroundCorrectness.maxLagSeconds?.toFixed(1)}s`
+      : `∞ / ${backgroundCorrectness.maxLagSeconds?.toFixed(1)}s`;
+    deliveryFill.style.scale = `${lagRatio} 1`;
+    deliveryStatus.textContent = backgroundCorrectness.status === "missing"
+      ? "0% delivered · no complete path"
+      : backgroundCorrectness.status === "backlogged"
+        ? `${backgroundCorrectness.deliveryPercent.toFixed(1)}% delivered · backlog +${Math.round(backgroundCorrectness.backlogRps)}/s`
+        : backgroundCorrectness.status === "stale"
+          ? `${backgroundCorrectness.deliveryPercent.toFixed(1)}% delivered · data is stale`
+          : backgroundCorrectness.status === "blocking"
+            ? "100% delivered · blocks the user response"
+            : `${backgroundCorrectness.deliveryPercent.toFixed(1)}% delivered · asynchronous`;
   }
 
   bottleneckElement.textContent = metrics.diagnosis;
@@ -4238,7 +4295,7 @@ function populateOperationalReview(metrics: ReturnType<typeof calculateMetrics>,
     resultProofCopy.textContent = `Metadata, playback, and transcode paths all cleared ${targetRps.toLocaleString("en-US")} r/s equivalent demand; p95 settled at ${metrics.latency} ms.`;
   } else if (passed && backgroundMode === "asynchronous") {
     resultProofTitle.textContent = "User and background work stayed isolated";
-    resultProofCopy.textContent = `The request path met p95 ${metrics.latency} ms while the asynchronous path drained its workload without a growing backlog.`;
+    resultProofCopy.textContent = `The request path met p95 ${metrics.latency} ms while ${metrics.correctness.deliveryPercent.toFixed(1)}% of background work arrived with ${metrics.correctness.lagSeconds.toFixed(1)}s lag.`;
   } else if (passed) {
     resultProofTitle.textContent = "The connected path survived the drill";
     resultProofCopy.textContent = `${targetRps.toLocaleString("en-US")} r/s held inside the ${latencySlo} ms SLO${headroom > 0 ? ` with ${Math.round(headroom).toLocaleString("en-US")} r/s spare capacity` : " at the tested capacity"}.`;
@@ -4250,7 +4307,12 @@ function populateOperationalReview(metrics: ReturnType<typeof calculateMetrics>,
     resultProofCopy.textContent = "Installed machines never formed a complete healthy response route, so capacity and latency could not be certified.";
   }
 
-  if (disconnectedIds.size > 0) {
+  if (metrics.correctness.required && !metrics.correctness.meetsContract) {
+    resultRiskTitle.textContent = `${currentPhase.backgroundSlo?.label ?? "Background data"}: contract missed`;
+    resultRiskCopy.textContent = metrics.correctness.status === "backlogged"
+      ? `Only ${metrics.correctness.deliveryPercent.toFixed(1)}% is delivered at the offered load; the backlog grows by ${Math.round(metrics.correctness.backlogRps)}/s.`
+      : `Delivery lag is ${Number.isFinite(metrics.correctness.lagSeconds) ? `${metrics.correctness.lagSeconds.toFixed(1)}s` : "unbounded"}, above the ${metrics.correctness.maxLagSeconds?.toFixed(1)}s limit.`;
+  } else if (disconnectedIds.size > 0) {
     resultRiskTitle.textContent = `${disconnectedIds.size} machine${disconnectedIds.size === 1 ? " is" : "s are"} operationally idle`;
     resultRiskCopy.textContent = "They consume budget but sit outside every required request, background, delivery, or replication path.";
   } else if (backgroundMode === "synchronous") {
@@ -5161,17 +5223,21 @@ function provisionCertifiedSpecializedDemo() {
   activeConfigs.add("autoscaling");
   activeConfigs.add("walTuning");
   activeConfigs.add("circuitBreaker");
+  const drainDemandForFreshness = (arrivalRps: number) => currentPhase.backgroundSlo
+    ? arrivalRps * 0.82 / Math.max(0.05, currentPhase.backgroundSlo.maxLagSeconds - 0.18)
+    : arrivalRps;
 
   if (currentPhase.workload === "streaming") {
     const metadataDemand = targetRps * 0.22;
     const playbackDemand = targetRps * 0.78;
     const mediaJobDemand = targetRps * 0.18;
+    const mediaDrainDemand = drainDemandForFreshness(mediaJobDemand);
     placeDemoMachinesUntil("loadBalancer", Math.ceil(metadataDemand / infrastructureComponentCapacity.loadBalancer));
     placeDemoMachinesUntil("api", Math.ceil(metadataDemand / (infrastructureComponentCapacity.api * 1.35)));
     placeDemoMachinesUntil("redis", Math.ceil(metadataDemand / infrastructureComponentCapacity.redis));
     placeDemoMachinesUntil("postgres", Math.ceil(metadataDemand / (infrastructureComponentCapacity.postgres * 1.25 * 3.125)));
-    placeDemoMachinesUntil("queue", Math.ceil(mediaJobDemand / infrastructureComponentCapacity.queue));
-    placeDemoMachinesUntil("worker", Math.ceil(mediaJobDemand / infrastructureComponentCapacity.worker));
+    placeDemoMachinesUntil("queue", Math.ceil(mediaDrainDemand / infrastructureComponentCapacity.queue));
+    placeDemoMachinesUntil("worker", Math.ceil(mediaDrainDemand / infrastructureComponentCapacity.worker));
     placeDemoMachinesUntil("objectStorage", Math.ceil(playbackDemand / infrastructureComponentCapacity.objectStorage));
     placeDemoMachinesUntil("cdn", Math.ceil(playbackDemand / infrastructureComponentCapacity.cdn));
     return;
@@ -5184,8 +5250,9 @@ function provisionCertifiedSpecializedDemo() {
   placeDemoMachinesUntil("geoIndex", Math.ceil(targetRps / infrastructureComponentCapacity.geoIndex));
   if (currentPhase.workload === "dispatch") {
     const eventDemand = targetRps * 0.42;
-    placeDemoMachinesUntil("queue", Math.ceil(eventDemand / infrastructureComponentCapacity.queue));
-    placeDemoMachinesUntil("worker", Math.ceil(eventDemand / infrastructureComponentCapacity.worker));
+    const eventDrainDemand = drainDemandForFreshness(eventDemand);
+    placeDemoMachinesUntil("queue", Math.ceil(eventDrainDemand / infrastructureComponentCapacity.queue));
+    placeDemoMachinesUntil("worker", Math.ceil(eventDrainDemand / infrastructureComponentCapacity.worker));
   }
 }
 

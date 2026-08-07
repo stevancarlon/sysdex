@@ -728,6 +728,53 @@ button,
   margin-bottom: 12px;
 }
 
+.delivery-meter {
+  margin: -3px 0 11px;
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: rgba(5, 19, 31, .72);
+  box-shadow: inset 0 0 0 1px rgba(197, 226, 236, .11);
+}
+
+.delivery-meter[hidden] { display: none; }
+
+.delivery-meter > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.delivery-meter span,
+.delivery-meter strong,
+.delivery-meter p { font-family: "Courier New", monospace; }
+.delivery-meter span { color: #8aa3ad; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.delivery-meter strong { color: #c9e6eb; font-size: 11px; font-variant-numeric: tabular-nums; }
+.delivery-meter p { margin: 5px 0 0; color: #89a4ae; font-size: 9px; line-height: 1.3; }
+
+.delivery-track {
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #071522;
+}
+
+.delivery-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: #67d8d5;
+  box-shadow: 0 0 7px rgba(103, 216, 213, .42);
+  transform-origin: left center;
+  transition: scale 180ms ease-out, background-color 180ms ease-out, box-shadow 180ms ease-out;
+}
+
+.delivery-meter[data-met="false"] strong,
+.delivery-meter[data-met="false"] p { color: #e7a6b2; }
+.delivery-meter[data-met="false"] .delivery-track i { background: #db7186; box-shadow: 0 0 7px rgba(219, 113, 134, .42); }
+
 .metric {
   padding: 9px 7px 8px;
   border-radius: 9px;
@@ -2305,6 +2352,10 @@ button,
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-top: 9px;
+}
+
+.briefing-targets[data-count="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .briefing-targets div {
