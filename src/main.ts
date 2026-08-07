@@ -62,7 +62,6 @@ type PlacedComponent = {
   group: THREE.Group;
   grid: GridPosition;
   label: HTMLDivElement;
-  sprite: HTMLImageElement;
   state: "healthy" | "degraded" | "failed";
 };
 
@@ -227,7 +226,7 @@ const componentOrder: ComponentKind[] = [
   "objectStorage",
   "cdn",
 ];
-const componentSpriteSources: Record<ComponentKind, string> = {
+const componentPreviewSources: Record<ComponentKind, string> = {
   loadBalancer: "/assets/components-v1/load-balancer.png",
   api: "/assets/components-v1/api-gateway.png",
   redis: "/assets/components-v1/cache-node.png",
@@ -414,10 +413,7 @@ function formatErrorPercent(value: number, contract = value) {
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="game-shell">
-    <img class="workshop-plate" src="/assets/sysdex-approved-reference-v1.png" alt="" aria-hidden="true" />
-    <img class="workshop-cursor-cleanup" src="/assets/sysdex-live-cursor-cleanup-v1.png" alt="" aria-hidden="true" />
     <canvas id="game-canvas" aria-label="Isometric system design workspace"></canvas>
-    <div class="component-sprite-layer" id="component-sprite-layer" aria-hidden="true"></div>
 
     <div class="start-overlay" id="start-overlay" data-visible="true" aria-hidden="false">
       <section class="start-card" role="dialog" aria-modal="true" aria-labelledby="start-title">
@@ -826,8 +822,6 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 `;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas")!;
-const gameShellElement = document.querySelector<HTMLElement>(".game-shell")!;
-const componentSpriteLayer = document.querySelector<HTMLDivElement>("#component-sprite-layer")!;
 canvas.dataset.reducedMotion = String(prefersReducedMotion);
 reducedMotionQuery.addEventListener("change", (event) => {
   prefersReducedMotion = event.matches;
@@ -1046,7 +1040,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.toneMappingExposure = 2.7;
+renderer.toneMappingExposure = 3.15;
 
 const camera = new THREE.OrthographicCamera(-8, 8, 6, -6, 0.1, 100);
 camera.position.set(8.8, 16.2, 10.6);
@@ -1056,8 +1050,8 @@ camera.updateProjectionMatrix();
 const composer = new EffectComposer(renderer);
 composer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 const pixelatedPass = new RenderPixelatedPass(2, scene, camera, {
-  normalEdgeStrength: 0.22,
-  depthEdgeStrength: 0.3,
+  normalEdgeStrength: 0.16,
+  depthEdgeStrength: 0.22,
 });
 composer.addPass(pixelatedPass);
 const palettePass = new ShaderPass({
@@ -1065,8 +1059,8 @@ const palettePass = new ShaderPass({
   uniforms: {
     tDiffuse: { value: null },
     blockSize: { value: pixelatedPass.pixelSize },
-    colorLevels: { value: 28 },
-    ditherStrength: { value: 0.006 },
+    colorLevels: { value: 30 },
+    ditherStrength: { value: 0.004 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -1105,7 +1099,7 @@ const cameraOrbitHeight = camera.position.y;
 let cameraAzimuth = Math.atan2(camera.position.x, camera.position.z);
 let targetCameraAzimuth = cameraAzimuth;
 
-const ambientLight = new THREE.HemisphereLight(0xdce8eb, 0x273f55, 4.75);
+const ambientLight = new THREE.HemisphereLight(0xe7f5f2, 0x35566b, 5.35);
 scene.add(ambientLight);
 
 const keyLight = new THREE.DirectionalLight(0xe9f4ed, 5.05);
@@ -1127,7 +1121,7 @@ const coolFill = new THREE.PointLight(0x4aa5b7, 6.9, 15, 2);
 coolFill.position.set(6, 4, 3);
 scene.add(coolFill);
 
-const frontFill = new THREE.DirectionalLight(0x9fcfd2, 1.45);
+const frontFill = new THREE.DirectionalLight(0xb8e4df, 1.9);
 frontFill.position.set(1, 7, 12);
 scene.add(frontFill);
 
@@ -1140,6 +1134,9 @@ const rows = 7;
 const tileSize = 1.3;
 const tileMeshes: THREE.Mesh[] = [];
 const boardActivityMaterials: THREE.MeshStandardMaterial[] = [];
+const workshopPulseMaterials: THREE.MeshStandardMaterial[] = [];
+const workshopPulseLights: THREE.PointLight[] = [];
+const workshopRotors: THREE.Object3D[] = [];
 const paintedFloorTexture = createPixelWorkshopTexture("floor");
 const paintedWallTexture = createPixelWorkshopTexture("wall");
 const paintedMachineDarkTexture = createPixelWorkshopTexture("machine-dark");
@@ -1263,14 +1260,14 @@ for (let row = 0; row < rows; row += 1) {
 
 addBoardDetails();
 addEnvironment();
-boardGroup.visible = false;
-environmentGroup.visible = false;
+boardGroup.visible = true;
+environmentGroup.visible = true;
 
 const machinesGroup = new THREE.Group();
 const connectionsGroup = new THREE.Group();
 const packetsGroup = new THREE.Group();
 scene.add(connectionsGroup, packetsGroup, machinesGroup);
-machinesGroup.visible = false;
+machinesGroup.visible = true;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -1278,22 +1275,6 @@ const clock = new THREE.Clock();
 const nodes: PlacedComponent[] = [];
 const connections: Connection[] = [];
 const authoredConnections: AuthoredConnection[] = [];
-
-function setReferenceIdle(enabled: boolean) {
-  gameShellElement.dataset.referenceIdle = String(enabled);
-}
-
-gameShellElement.addEventListener("pointerdown", (event) => {
-  if (gameShellElement.dataset.referenceIdle !== "true") return;
-  const target = event.target as Element;
-  if (target.closest(".parts-panel, .mission-card, .telemetry-panel, #game-canvas")) {
-    setReferenceIdle(false);
-  }
-}, { capture: true });
-
-window.addEventListener("keydown", () => {
-  if (gameShellElement.dataset.referenceIdle === "true") setReferenceIdle(false);
-}, { capture: true });
 const packets: Packet[] = [];
 let packetSequence = 0;
 const trafficRoutes: Connection[][] = [];
@@ -1312,7 +1293,6 @@ let draggedNode: PlacedComponent | null = null;
 let pointerDownPosition = { x: 0, y: 0 };
 let nodeHasMoved = false;
 let ghost: THREE.Group | null = null;
-let ghostSprite: HTMLImageElement | null = null;
 let placementTile: THREE.Mesh | null = null;
 let isRunning = false;
 let testPhase: TestPhase = "idle";
@@ -1477,7 +1457,6 @@ function dismissPhaseBriefing() {
   phaseBriefingOverlay.dataset.visible = "false";
   phaseBriefingOverlay.setAttribute("aria-hidden", "true");
   missionCard.dataset.briefing = "false";
-  if (currentPhaseIndex === 0 && nodes.length === 0) setReferenceIdle(true);
   window.setTimeout(() => missionCard.focus({ preventScroll: true }), 320);
   showToast(currentPhaseIndex === 1
     ? "Inherited system loaded. Trace the blocking analytics call and compare valid fixes."
@@ -2215,7 +2194,7 @@ function createMachine(kind: ComponentKind, translucent = false): THREE.Group {
 
 function renderPartPreviews() {
   for (const kind of componentOrder) {
-    const previewData = componentSpriteSources[kind];
+    const previewData = componentPreviewSources[kind];
     const image = document.querySelector<HTMLImageElement>(`#part-preview-${kind}`);
     brandPreviewData.set(kind, previewData);
     if (image) image.src = previewData;
@@ -2291,6 +2270,8 @@ function addBoardDetails() {
   const exchange = new THREE.Group();
   exchange.position.set(0, 0.155, 0);
   exchange.rotation.y = -0.055;
+  exchange.userData.baseRotation = exchange.rotation.y;
+  workshopRotors.push(exchange);
   boardGroup.add(exchange);
 
   const warmMetal = casingMaterial(0x84999b, 0.88, 0.1, 0.012);
@@ -2437,6 +2418,8 @@ function addEnvironment() {
     emissiveIntensity: 1.5,
     roughness: 0.22,
   });
+  coolLamp.userData.baseEmissiveIntensity = coolLamp.emissiveIntensity;
+  workshopPulseMaterials.push(coolLamp);
   for (const [x, z, rotation] of [
     [-3.7, -4.54, 0], [0, -4.54, 0], [3.7, -4.54, 0],
     [-6.0, 2.25, Math.PI / 2], [6.0, -2.1, -Math.PI / 2],
@@ -2446,6 +2429,9 @@ function addEnvironment() {
   for (const [x, z] of [[-3.7, -4.1], [0, -4.1], [3.7, -4.1]] as const) {
     const lampLight = new THREE.PointLight(0x72d8d6, 4.2, 5.2, 2);
     lampLight.position.set(x, 1.5, z);
+    lampLight.userData.baseIntensity = lampLight.intensity;
+    lampLight.userData.phase = workshopPulseLights.length * 1.7;
+    workshopPulseLights.push(lampLight);
     environmentGroup.add(lampLight);
   }
 
@@ -2607,6 +2593,8 @@ function addPlatformUndercarriage(
     emissiveIntensity: 1.8,
     roughness: 0.2,
   });
+  underglow.userData.baseEmissiveIntensity = underglow.emissiveIntensity;
+  workshopPulseMaterials.push(underglow);
   addMesh(environmentGroup, new THREE.BoxGeometry(8.2, 0.045, 0.06), underglow, [1.7, -1.13, 5.48]);
   addMesh(environmentGroup, new THREE.BoxGeometry(0.06, 0.045, 5.5), underglow, [7.25, -1.13, 0.8]);
 
@@ -2614,6 +2602,9 @@ function addPlatformUndercarriage(
   for (const [x, z] of [[0, 5.85], [6.9, 0], [0, -5.85], [-6.9, 0]] as const) {
     const serviceGlow = new THREE.PointLight(0x4dc9ee, 1.45, 3.2, 2);
     serviceGlow.position.set(x, -0.18, z);
+    serviceGlow.userData.baseIntensity = serviceGlow.intensity;
+    serviceGlow.userData.phase = workshopPulseLights.length * 1.7;
+    workshopPulseLights.push(serviceGlow);
     environmentGroup.add(serviceGlow);
   }
 }
@@ -2801,21 +2792,12 @@ function placeComponent(kind: ComponentKind, grid: GridPosition, silent = false)
   group.userData.dragLift = 0;
   machinesGroup.add(group);
 
-  const sprite = document.createElement("img");
-  sprite.className = "component-sprite";
-  sprite.src = componentSpriteSources[kind];
-  sprite.alt = "";
-  sprite.draggable = false;
-  sprite.dataset.kind = kind;
-  sprite.dataset.state = "healthy";
-  componentSpriteLayer.append(sprite);
-
   const label = document.createElement("div");
   label.className = "component-label";
   label.innerHTML = `${contextualComponentLabel(kind)}<small>${contextualComponentRole(kind)}</small>`;
   document.querySelector(".game-shell")!.append(label);
 
-  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, sprite, state: "healthy" };
+  const node: PlacedComponent = { id, kind, group, grid: { ...grid }, label, state: "healthy" };
   nodes.push(node);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -2839,7 +2821,6 @@ function moveNode(node: PlacedComponent, grid: GridPosition) {
 
 function selectNode(node: PlacedComponent | null) {
   selectedNode = node;
-  for (const candidate of nodes) candidate.sprite.dataset.selected = String(candidate === node);
   if (!node) {
     selectedCard.dataset.visible = "false";
     chaosButton.hidden = true;
@@ -2903,8 +2884,7 @@ function updateMachineAnimations(delta: number) {
     const degraded = node.state === "degraded";
     const disconnected = disconnectedNodeIds?.has(String(node.id)) ?? false;
     const overloaded = isRunning && metrics.bottleneckKind === node.kind && currentDemand > metrics.capacity;
-    node.sprite.dataset.state = failed ? "failed" : degraded ? "degraded" : disconnected ? "disconnected" : overloaded ? "hot" : "healthy";
-    node.sprite.dataset.running = String(isRunning && !failed && !disconnected);
+    node.label.dataset.visible = String(selected || hovered);
     const targetScale = (selected ? 1.025 : hovered ? 0.985 : 0.94) * (failed ? 0.9 : degraded ? 0.96 : 1);
     const desiredLift = node === draggedNode ? 0.2 : 0;
     group.userData.dragLift = THREE.MathUtils.lerp(group.userData.dragLift as number ?? 0, desiredLift, Math.min(1, delta * 15));
@@ -3000,7 +2980,6 @@ function removeNode(node: PlacedComponent) {
     else objectMaterial.dispose();
   });
   node.label.remove();
-  node.sprite.remove();
   selectNode(null);
   rebuildConnections();
   checkTopologyIncidentResponse();
@@ -3015,7 +2994,6 @@ function clearLaboratory() {
   for (const node of nodes) {
     machinesGroup.remove(node.group);
     node.label.remove();
-    node.sprite.remove();
     node.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
       object.geometry.dispose();
@@ -3407,16 +3385,9 @@ function updateGhost(kind: ComponentKind, grid: GridPosition | null) {
     ghost.userData.kind = kind;
     ghost.scale.setScalar(0.94);
     scene.add(ghost);
-    ghostSprite = document.createElement("img");
-    ghostSprite.className = "component-sprite component-sprite-ghost";
-    ghostSprite.src = componentSpriteSources[kind];
-    ghostSprite.alt = "";
-    ghostSprite.draggable = false;
-    componentSpriteLayer.append(ghostSprite);
   }
   ghost.position.copy(gridToWorld(grid));
   const valid = !isOccupied(grid) && componentDefinitions[kind].cost <= remainingBudget();
-  if (ghostSprite) ghostSprite.dataset.valid = String(valid);
   const nextTile = tileMeshes.find((tile) => {
     const tileGrid = tile.userData.grid as GridPosition;
     return tileGrid.col === grid.col && tileGrid.row === grid.row;
@@ -3447,8 +3418,6 @@ function clearPlacementTile() {
 
 function removeGhost() {
   clearPlacementTile();
-  ghostSprite?.remove();
-  ghostSprite = null;
   if (!ghost) return;
   scene.remove(ghost);
   ghost.traverse((object) => {
@@ -3490,14 +3459,14 @@ function connect(
     ? [start, end]
     : [start, middleA, middleB, end];
   const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.03);
-  const cableMaterial = material(0x2b6787, {
-    emissive: 0x0b3148,
-    emissiveIntensity: 0.34,
+  const cableMaterial = material(0x4c9fb7, {
+    emissive: 0x15566e,
+    emissiveIntensity: 0.62,
     roughness: 0.42,
-    metalness: 0.5,
+    metalness: 0.38,
   });
   const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 30, 0.032, 7, false),
+    new THREE.TubeGeometry(curve, 30, 0.045, 7, false),
     cableMaterial,
   );
   tube.receiveShadow = true;
@@ -3513,9 +3482,9 @@ function connect(
     }),
   );
   connectionsGroup.add(hitTube);
-  const arrowMaterial = material(0x62b9d2, {
-    emissive: 0x16445d,
-    emissiveIntensity: 0.65,
+  const arrowMaterial = material(0x83e7e3, {
+    emissive: 0x247c85,
+    emissiveIntensity: 0.9,
     roughness: 0.4,
     metalness: 0.32,
   });
@@ -5996,19 +5965,6 @@ dismissResultButton.addEventListener("click", () => {
   updateTelemetry();
 });
 
-function positionComponentSprite(sprite: HTMLImageElement, worldPosition: THREE.Vector3) {
-  const rect = canvas.getBoundingClientRect();
-  const projected = worldPosition.clone().project(camera);
-  const x = (projected.x * 0.5 + 0.5) * rect.width;
-  const y = (-projected.y * 0.5 + 0.5) * rect.height;
-  const depthScale = THREE.MathUtils.clamp(0.86 + (y / Math.max(1, rect.height)) * 0.22, 0.88, 1.08);
-  sprite.style.left = `${x}px`;
-  sprite.style.top = `${y}px`;
-  sprite.style.zIndex = String(Math.round(y));
-  sprite.style.setProperty("--sprite-depth", depthScale.toFixed(3));
-  sprite.style.opacity = projected.z < 1 ? "1" : "0";
-}
-
 function updateLabels() {
   const rect = canvas.getBoundingClientRect();
   const occupiedLabels: Array<{ left: number; right: number; top: number; bottom: number }> = [];
@@ -6019,7 +5975,6 @@ function updateLabels() {
       && candidate.bottom > occupied.top,
   );
   for (const node of nodes) {
-    positionComponentSprite(node.sprite, node.group.position);
     const projected = node.group.position.clone();
     projected.y += 1.95;
     projected.project(camera);
@@ -6036,7 +5991,6 @@ function updateLabels() {
       occupiedLabels.push({ left: x - width / 2 - 4, right: x + width / 2 + 4, top: y - 34, bottom: y + 4 });
     }
   }
-  if (ghost && ghostSprite) positionComponentSprite(ghostSprite, ghost.position);
   for (const connection of connections) {
     if (!connection.annotation) continue;
     const projected = connection.curve.getPointAt(0.52);
@@ -6108,6 +6062,25 @@ function updateBoardActivity() {
   }
 }
 
+function updateWorkshopAnimations() {
+  const motionTime = prefersReducedMotion ? 0 : elapsed;
+  for (const [index, rotor] of workshopRotors.entries()) {
+    const baseRotation = rotor.userData.baseRotation as number ?? 0;
+    rotor.rotation.y = baseRotation + motionTime * (0.025 + index * 0.005);
+  }
+  for (const [index, light] of workshopPulseLights.entries()) {
+    const baseIntensity = light.userData.baseIntensity as number ?? light.intensity;
+    const phase = light.userData.phase as number ?? index * 1.7;
+    const pulse = prefersReducedMotion ? 1 : 0.94 + Math.sin(motionTime * 1.8 + phase) * 0.06;
+    light.intensity = baseIntensity * pulse;
+  }
+  for (const [index, pulseMaterial] of workshopPulseMaterials.entries()) {
+    const baseIntensity = pulseMaterial.userData.baseEmissiveIntensity as number ?? pulseMaterial.emissiveIntensity;
+    const pulse = prefersReducedMotion ? 1 : 0.92 + Math.sin(motionTime * 2.1 + index * 2.4) * 0.08;
+    pulseMaterial.emissiveIntensity = baseIntensity * pulse;
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
@@ -6117,6 +6090,7 @@ function animate() {
   updatePackets(delta);
   updateMachineAnimations(delta);
   updateBoardActivity();
+  updateWorkshopAnimations();
   updateTelemetry();
   updateLabels();
   composer.render(delta);
@@ -6392,7 +6366,4 @@ if (sharedDesign !== null) {
 }
 if (searchParams.get("wiring") === "manual" && manualWiringAvailable() && topologyMode === "automatic") {
   setWiringEditing(true);
-}
-if (demoMode === "empty" && currentPhaseIndex === 0 && nodes.length === 0) {
-  setReferenceIdle(true);
 }
