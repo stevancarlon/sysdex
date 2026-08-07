@@ -23,6 +23,12 @@ import {
   type DrillSnapshotV1,
 } from "../src/simulation/runComparison.ts";
 import { evaluateBackgroundCorrectness } from "../src/simulation/correctness.ts";
+import {
+  decodeSharedBlueprint,
+  encodeSharedBlueprint,
+  maximumSharedBlueprintLength,
+  type SharedBlueprintV1,
+} from "../src/simulation/blueprintCodec.ts";
 
 const options = { demand: 1_200, latencySlo: 115, errorSlo: 1.5 };
 
@@ -472,4 +478,22 @@ test("background correctness follows delivery and lag rather than a prescribed t
   assert.equal(failing.meetsContract, false);
   assert.equal(failing.status, "backlogged");
   assert.ok(failing.deliveryPercent < 99.5);
+});
+
+test("shared blueprints round-trip compact manual graph tuples", () => {
+  const payload: SharedBlueprintV1 = {
+    v: 1,
+    p: 1,
+    m: 1,
+    n: [[1, 0, 1, 3], [2, 1, 3, 3], [3, 4, 5, 3]],
+    e: [[1, 2, 0], [2, 3, 2, "ASYNC EVENT · NON-BLOCKING"]],
+    c: [0],
+  };
+  const encoded = encodeSharedBlueprint(payload);
+
+  assert.match(encoded, /^[A-Za-z0-9_-]+$/);
+  assert.ok(encoded.length < JSON.stringify(payload).length * 1.5);
+  assert.deepEqual(decodeSharedBlueprint(encoded), payload);
+  assert.equal(decodeSharedBlueprint("not+url/safe"), null);
+  assert.equal(decodeSharedBlueprint("a".repeat(maximumSharedBlueprintLength + 1)), null);
 });

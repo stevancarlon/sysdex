@@ -29,6 +29,11 @@ import {
   type DrillTrend,
 } from "./simulation/runComparison.ts";
 import { evaluateBackgroundCorrectness } from "./simulation/correctness.ts";
+import {
+  decodeSharedBlueprint,
+  encodeSharedBlueprint,
+  type SharedBlueprintV1,
+} from "./simulation/blueprintCodec.ts";
 
 type ComponentDefinition = {
   label: string;
@@ -219,6 +224,7 @@ const componentOrder: ComponentKind[] = [
   "objectStorage",
   "cdn",
 ];
+const blueprintConnectionModes: SimulationEdgeMode[] = ["request", "cache", "enqueue", "consume", "commit", "replicate"];
 const brandPreviewData = new Map<ComponentKind, string>();
 let currentPhaseIndex = 0;
 let currentPhase: CampaignPhase = campaignPhases[currentPhaseIndex];
@@ -434,6 +440,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <div class="blueprint-actions" aria-label="Blueprint controls">
         <button id="save-blueprint-button" type="button">Save design</button>
         <button id="load-blueprint-button" type="button">Restore saved</button>
+        <button id="share-blueprint-button" type="button">Share link</button>
       </div>
     </section>
 
@@ -611,6 +618,7 @@ const partsList = document.querySelector<HTMLDivElement>("#parts-list")!;
 const partsHint = document.querySelector<HTMLElement>("#parts-hint")!;
 const saveBlueprintButton = document.querySelector<HTMLButtonElement>("#save-blueprint-button")!;
 const loadBlueprintButton = document.querySelector<HTMLButtonElement>("#load-blueprint-button")!;
+const shareBlueprintButton = document.querySelector<HTMLButtonElement>("#share-blueprint-button")!;
 const budgetElement = document.querySelector<HTMLSpanElement>("#budget")!;
 const runButton = document.querySelector<HTMLButtonElement>("#run-button")!;
 const statusLight = document.querySelector<HTMLSpanElement>("#status-light")!;
@@ -2517,70 +2525,71 @@ function blueprintStorageKey(phaseIndex = currentPhaseIndex) {
   return `sysdex-blueprint-v1-${phaseIndex}`;
 }
 
+function validateBlueprintCandidate(value: unknown): SavedBlueprintV1 | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SavedBlueprintV1>;
+  if (candidate.version !== 1 || candidate.phaseIndex !== currentPhaseIndex) return null;
+  if (!Number.isInteger(candidate.savedAt) || candidate.savedAt! < 0) return null;
+  if (candidate.topologyMode !== "automatic" && candidate.topologyMode !== "manual") return null;
+  if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.connections) || !Array.isArray(candidate.configs)) return null;
+  const validNodes = candidate.nodes.length <= columns * rows && candidate.nodes.every((node) => node
+    && Number.isInteger(node.id)
+    && node.id > 0
+    && componentOrder.includes(node.kind as ComponentKind)
+    && currentPhase.unlocks.includes(node.kind as ComponentKind)
+    && Number.isInteger(node.grid?.col)
+    && Number.isInteger(node.grid?.row)
+    && node.grid!.col >= 0
+    && node.grid!.col < columns
+    && node.grid!.row >= 0
+    && node.grid!.row < rows);
+  if (!validNodes) return null;
+  const occupiedTiles = new Set(candidate.nodes.map((node) => `${node.grid.col}:${node.grid.row}`));
+  const savedNodeIds = new Set(candidate.nodes.map((node) => node.id));
+  const savedNodeById = new Map(candidate.nodes.map((node) => [node.id, node]));
+  const configIds = new Set(candidate.configs);
+  const validConfigs = configIds.size === candidate.configs.length
+    && candidate.configs.every((id) => currentPhase.configUnlocks.includes(id as ConfigId));
+  const connectionKeys = new Set<string>();
+  const validConnections = candidate.connections.length <= 160 && candidate.connections.every((connection) => {
+    if (!connection || connection.fromId === connection.toId) return false;
+    const from = savedNodeById.get(connection.fromId);
+    const to = savedNodeById.get(connection.toId);
+    if (!from || !to || !blueprintConnectionModes.includes(connection.mode)) return false;
+    const rule = authoredConnectionRule(from.kind as ComponentKind, to.kind as ComponentKind);
+    if (!rule || rule.mode !== connection.mode) return false;
+    if (connection.label !== null
+      && (typeof connection.label !== "string" || connection.label.length > 64 || /[<>]/.test(connection.label))) return false;
+    const key = `${connection.fromId}:${connection.toId}:${connection.mode}`;
+    if (connectionKeys.has(key)) return false;
+    connectionKeys.add(key);
+    return true;
+  });
+  const machineCost = candidate.nodes.reduce((total, node) => total + componentDefinitions[node.kind as ComponentKind].cost, 0);
+  const configCost = configDefinitions.reduce(
+    (total, config) => total + (candidate.configs!.includes(config.id) ? config.cost : 0),
+    0,
+  );
+  if (occupiedTiles.size !== candidate.nodes.length
+    || savedNodeIds.size !== candidate.nodes.length
+    || !validConfigs
+    || !validConnections
+    || (candidate.topologyMode === "automatic" && candidate.connections.length > 0)
+    || machineCost + configCost > currentPhase.budget) return null;
+  return candidate as SavedBlueprintV1;
+}
+
 function readSavedBlueprint(): SavedBlueprintV1 | null {
   try {
     const raw = window.localStorage.getItem(blueprintStorageKey());
-    if (!raw) return null;
-    const candidate = JSON.parse(raw) as Partial<SavedBlueprintV1>;
-    if (candidate.version !== 1 || candidate.phaseIndex !== currentPhaseIndex) return null;
-    if (candidate.topologyMode !== "automatic" && candidate.topologyMode !== "manual") return null;
-    if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.connections) || !Array.isArray(candidate.configs)) return null;
-    const validNodes = candidate.nodes.length <= columns * rows && candidate.nodes.every((node) => node
-      && Number.isInteger(node.id)
-      && componentOrder.includes(node.kind as ComponentKind)
-      && currentPhase.unlocks.includes(node.kind as ComponentKind)
-      && Number.isInteger(node.grid?.col)
-      && Number.isInteger(node.grid?.row)
-      && node.grid!.col >= 0
-      && node.grid!.col < columns
-      && node.grid!.row >= 0
-      && node.grid!.row < rows);
-    const occupiedTiles = new Set(candidate.nodes.map((node) => `${node.grid?.col}:${node.grid?.row}`));
-    const validConfigs = candidate.configs.every((id) => currentPhase.configUnlocks.includes(id as ConfigId));
-    const savedNodeIds = new Set(candidate.nodes.map((node) => node.id));
-    const validConnections = candidate.connections.length <= 160 && candidate.connections.every((connection) => connection
-      && savedNodeIds.has(connection.fromId)
-      && savedNodeIds.has(connection.toId)
-      && ["request", "cache", "enqueue", "consume", "commit", "replicate"].includes(connection.mode)
-      && (connection.label === null
-        || (typeof connection.label === "string" && connection.label.length <= 64 && !/[<>]/.test(connection.label))));
-    const machineCost = candidate.nodes.reduce((total, node) => total + componentDefinitions[node.kind as ComponentKind].cost, 0);
-    const configCost = configDefinitions.reduce(
-      (total, config) => total + (candidate.configs!.includes(config.id) ? config.cost : 0),
-      0,
-    );
-    if (!validNodes
-      || occupiedTiles.size !== candidate.nodes.length
-      || savedNodeIds.size !== candidate.nodes.length
-      || !validConfigs
-      || !validConnections
-      || machineCost + configCost > currentPhase.budget) return null;
-    return candidate as SavedBlueprintV1;
+    return raw ? validateBlueprintCandidate(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
 }
 
-function syncBlueprintUi() {
-  const hasSavedBlueprint = readSavedBlueprint() !== null;
-  saveBlueprintButton.disabled = isRunning || nodes.length === 0;
-  loadBlueprintButton.disabled = isRunning || !hasSavedBlueprint;
-  loadBlueprintButton.dataset.available = String(hasSavedBlueprint);
-  loadBlueprintButton.title = hasSavedBlueprint
-    ? `Restore the saved ${currentPhase.service} design`
-    : `No saved ${currentPhase.service} design`;
-}
-
-function saveBlueprint() {
-  if (isRunning) {
-    showToast("Blueprints are frozen during a live traffic drill.");
-    return;
-  }
-  if (nodes.length === 0) {
-    showToast("Place at least one machine before saving a blueprint.");
-    return;
-  }
-  const blueprint: SavedBlueprintV1 = {
+function createCurrentBlueprint(): SavedBlueprintV1 {
+  return {
     version: 1,
     phaseIndex: currentPhaseIndex,
     savedAt: Date.now(),
@@ -2596,6 +2605,29 @@ function saveBlueprint() {
       : [],
     configs: [...activeConfigs],
   };
+}
+
+function syncBlueprintUi() {
+  const hasSavedBlueprint = readSavedBlueprint() !== null;
+  saveBlueprintButton.disabled = isRunning || nodes.length === 0;
+  loadBlueprintButton.disabled = isRunning || !hasSavedBlueprint;
+  shareBlueprintButton.disabled = isRunning || nodes.length === 0;
+  loadBlueprintButton.dataset.available = String(hasSavedBlueprint);
+  loadBlueprintButton.title = hasSavedBlueprint
+    ? `Restore the saved ${currentPhase.service} design`
+    : `No saved ${currentPhase.service} design`;
+}
+
+function saveBlueprint() {
+  if (isRunning) {
+    showToast("Blueprints are frozen during a live traffic drill.");
+    return;
+  }
+  if (nodes.length === 0) {
+    showToast("Place at least one machine before saving a blueprint.");
+    return;
+  }
+  const blueprint = createCurrentBlueprint();
   try {
     window.localStorage.setItem(blueprintStorageKey(), JSON.stringify(blueprint));
   } catch {
@@ -2612,13 +2644,118 @@ function saveBlueprint() {
   showToast(`${currentPhase.service} blueprint saved locally. Keep experimenting—Restore saved will bring this graph back.`);
 }
 
-function restoreBlueprint() {
-  const blueprint = readSavedBlueprint();
-  if (!blueprint) {
-    showToast(`No valid ${currentPhase.service} blueprint is saved in this browser.`);
-    syncBlueprintUi();
+function compactSharedBlueprint(blueprint: SavedBlueprintV1): SharedBlueprintV1 {
+  return {
+    v: 1,
+    p: blueprint.phaseIndex,
+    m: blueprint.topologyMode === "manual" ? 1 : 0,
+    n: blueprint.nodes.map((node) => [node.id, componentOrder.indexOf(node.kind), node.grid.col, node.grid.row]),
+    e: blueprint.connections.map((connection) => {
+      const tuple: [number, number, number, string?] = [
+        connection.fromId,
+        connection.toId,
+        blueprintConnectionModes.indexOf(connection.mode),
+      ];
+      if (connection.label !== null) tuple.push(connection.label);
+      return tuple;
+    }),
+    c: blueprint.configs.map((id) => configDefinitions.findIndex((config) => config.id === id)),
+  };
+}
+
+function readSharedBlueprint(encoded: string): SavedBlueprintV1 | null {
+  const decoded = decodeSharedBlueprint(encoded);
+  if (!decoded || typeof decoded !== "object") return null;
+  const candidate = decoded as Partial<SharedBlueprintV1>;
+  if (candidate.v !== 1 || candidate.p !== currentPhaseIndex || (candidate.m !== 0 && candidate.m !== 1)) return null;
+  if (!Array.isArray(candidate.n) || candidate.n.length > columns * rows
+    || !Array.isArray(candidate.e) || candidate.e.length > 160
+    || !Array.isArray(candidate.c) || candidate.c.length > configDefinitions.length) return null;
+  const validNodeTuples = candidate.n.every((tuple) => Array.isArray(tuple)
+    && tuple.length === 4
+    && tuple.every(Number.isInteger)
+    && componentOrder[tuple[1]] !== undefined);
+  const validEdgeTuples = candidate.e.every((tuple) => Array.isArray(tuple)
+    && (tuple.length === 3 || tuple.length === 4)
+    && Number.isInteger(tuple[0])
+    && Number.isInteger(tuple[1])
+    && Number.isInteger(tuple[2])
+    && blueprintConnectionModes[tuple[2]] !== undefined
+    && (tuple.length === 3 || typeof tuple[3] === "string"));
+  const validConfigTuples = candidate.c.every((index) => Number.isInteger(index) && configDefinitions[index] !== undefined);
+  if (!validNodeTuples || !validEdgeTuples || !validConfigTuples) return null;
+
+  const expanded: SavedBlueprintV1 = {
+    version: 1,
+    phaseIndex: candidate.p,
+    savedAt: Date.now(),
+    topologyMode: candidate.m === 1 ? "manual" : "automatic",
+    nodes: candidate.n.map(([id, kindIndex, col, row]) => ({ id, kind: componentOrder[kindIndex], grid: { col, row } })),
+    connections: candidate.e.map(([fromId, toId, modeIndex, label]) => ({
+      fromId,
+      toId,
+      mode: blueprintConnectionModes[modeIndex],
+      label: label ?? null,
+    })),
+    configs: candidate.c.map((index) => configDefinitions[index].id),
+  };
+  return validateBlueprintCandidate(expanded);
+}
+
+function fallbackCopyText(value: string) {
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.readOnly = true;
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.append(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  return copied;
+}
+
+async function shareBlueprint() {
+  if (isRunning) {
+    showToast("Blueprint links are frozen during a live traffic drill.");
     return;
   }
+  if (nodes.length === 0) {
+    showToast("Place at least one machine before sharing a blueprint.");
+    return;
+  }
+  const blueprint = createCurrentBlueprint();
+  const encoded = encodeSharedBlueprint(compactSharedBlueprint(blueprint));
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("phase", String(currentPhaseIndex));
+  url.searchParams.set("design", encoded);
+  let copied = false;
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(url.toString());
+      copied = true;
+    }
+  } catch {
+    copied = false;
+  }
+  if (!copied) copied = fallbackCopyText(url.toString());
+  if (!copied) {
+    window.history.replaceState(null, "", url);
+    showToast("The share URL is ready in the address bar.");
+    return;
+  }
+  shareBlueprintButton.dataset.saved = "true";
+  shareBlueprintButton.textContent = "Link copied";
+  window.setTimeout(() => {
+    shareBlueprintButton.dataset.saved = "false";
+    shareBlueprintButton.textContent = "Share link";
+  }, 1200);
+  showToast(`Share link copied: ${nodes.length} machines${topologyMode === "manual" ? ` and ${authoredConnections.length} authored cables` : " with automatic routing"}.`);
+}
+
+function restoreBlueprintData(blueprint: SavedBlueprintV1, source: "saved" | "shared") {
   stopTest(true);
   hideResult();
   resetTopologyEditor();
@@ -2658,7 +2795,17 @@ function restoreBlueprint() {
   syncWiringUi();
   updateUi();
   updateTelemetry();
-  showToast(`${currentPhase.service} blueprint restored: ${nodes.length} machines, ${activeConfigs.size} runbook policies, ${topologyMode === "manual" ? `${authoredConnections.length} authored cables` : "automatic routing"}.`);
+  showToast(`${source === "shared" ? "Shared" : currentPhase.service} blueprint restored: ${nodes.length} machines, ${activeConfigs.size} runbook policies, ${topologyMode === "manual" ? `${authoredConnections.length} authored cables` : "automatic routing"}.`);
+}
+
+function restoreBlueprint() {
+  const blueprint = readSavedBlueprint();
+  if (!blueprint) {
+    showToast(`No valid ${currentPhase.service} blueprint is saved in this browser.`);
+    syncBlueprintUi();
+    return;
+  }
+  restoreBlueprintData(blueprint, "saved");
 }
 
 function setActiveKind(kind: ComponentKind | null) {
@@ -3256,8 +3403,8 @@ function restoreAutomaticTopology() {
   showToast("Automatic routing restored. Your manual graph is preserved until the phase resets.");
 }
 
-function inferAuthoredConnection(from: PlacedComponent, to: PlacedComponent): Pick<AuthoredConnection, "mode" | "label"> | null {
-  const pair = `${from.kind}->${to.kind}`;
+function authoredConnectionRule(fromKind: ComponentKind, toKind: ComponentKind): Pick<AuthoredConnection, "mode" | "label"> | null {
+  const pair = `${fromKind}->${toKind}`;
   const asyncEventLabel = currentPhase.workload === "streaming"
     ? "MEDIA JOB"
     : currentPhase.workload === "dispatch"
@@ -3281,6 +3428,10 @@ function inferAuthoredConnection(from: PlacedComponent, to: PlacedComponent): Pi
     "postgres->postgres": { mode: "replicate", label: "REPLICA STREAM" },
   };
   return rules[pair] ?? null;
+}
+
+function inferAuthoredConnection(from: PlacedComponent, to: PlacedComponent): Pick<AuthoredConnection, "mode" | "label"> | null {
+  return authoredConnectionRule(from.kind, to.kind);
 }
 
 function addAuthoredConnection(from: PlacedComponent, to: PlacedComponent) {
@@ -5059,6 +5210,7 @@ traceButton.addEventListener("click", openOrCycleRequestTrace);
 traceCloseButton.addEventListener("click", () => closeRequestTrace());
 saveBlueprintButton.addEventListener("click", saveBlueprint);
 loadBlueprintButton.addEventListener("click", restoreBlueprint);
+shareBlueprintButton.addEventListener("click", () => void shareBlueprint());
 
 runButton.addEventListener("click", () => {
   if (isRunning) stopTest();
@@ -5374,6 +5526,18 @@ if (demoMode !== null) {
   }
 } else {
   openCampaignScreen();
+}
+const sharedDesign = searchParams.get("design");
+if (sharedDesign !== null) {
+  const blueprint = readSharedBlueprint(sharedDesign);
+  if (blueprint) {
+    closeCampaignScreen();
+    phaseBriefingOverlay.dataset.visible = "false";
+    phaseBriefingOverlay.setAttribute("aria-hidden", "true");
+    restoreBlueprintData(blueprint, "shared");
+  } else {
+    showToast("This shared blueprint was rejected. It may be damaged, over budget, incompatible, or built for another phase.");
+  }
 }
 if (searchParams.get("wiring") === "manual" && manualWiringAvailable() && topologyMode === "automatic") {
   setWiringEditing(true);
