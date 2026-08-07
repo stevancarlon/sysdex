@@ -640,6 +640,41 @@ button,
 
 .parts-hint b { color: #d5e8ec; }
 
+.blueprint-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(197, 226, 236, 0.1);
+}
+
+.blueprint-actions button {
+  min-height: 29px;
+  border: 0;
+  border-radius: 7px;
+  color: #a9c3ca;
+  background: rgba(18, 43, 57, 0.88);
+  box-shadow: inset 0 -3px 0 rgba(2, 10, 18, 0.3), 0 0 0 1px rgba(109, 229, 239, 0.13);
+  font: 900 8px "Courier New", monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition-property: scale, color, background-color, box-shadow, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.blueprint-actions button:hover:not(:disabled) {
+  color: #e2f4f6;
+  background: #285369;
+  box-shadow: inset 0 -3px 0 rgba(2, 10, 18, 0.3), 0 0 0 1px rgba(109, 229, 239, 0.3);
+}
+
+.blueprint-actions button:active:not(:disabled) { scale: .96; }
+.blueprint-actions button:disabled { opacity: .35; cursor: not-allowed; }
+.blueprint-actions button[data-saved="true"] { color: #ddfaf4; background: #28665f; box-shadow: inset 0 -3px 0 #16433f, 0 0 10px rgba(104, 224, 207, .18); }
+
 .telemetry-panel {
   right: 22px;
   width: 300px;
